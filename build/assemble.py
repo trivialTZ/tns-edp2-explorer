@@ -17,6 +17,9 @@ refuses to write inside this repo.
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
+import io
 import json
 import shutil
 import sys
@@ -28,15 +31,20 @@ import pandas as pd
 
 import common as C
 import hosts as H
+import stamps as ST
 
 PUBLIC_NORM_FILES = ["ztf.parquet", "tns.parquet", "lsst_alert.parquet"]
 SPEC_NORM = C.NORM / "tns_spec.parquet"                    # build/fetch_tns_spectra.py (public TNS spectra)
 EDP2_NORM = C.PRIVATE_NORM / "edp2.parquet"
 EDP2_OBJECTS = C.PRIVATE_NORM / "edp2_objects.parquet"
 EDP2_COADD = C.PRIVATE_NORM / "edp2_coadd.parquet"         # build/fetch_edp2_coadd.py
-EDP2_COLS = ["edp2_id", "edp2_sep", "edp2_ndia", "edp2_lead", "edp2_tc", "edp2_coadd", "edp2_coadd_bands"]
+EDP2_COLS = ["edp2_id", "edp2_sep", "edp2_ndia", "edp2_lead", "edp2_tc", "edp2_coadd", "edp2_coadd_bands", "edp2_stamp"]
 CODE_SUFFIXES = {".html", ".js", ".css", ".svg", ".png", ".ico", ".txt"}
-ROUND = {"ra": 6, "dec": 6, "z": 5, "disc_mjd": 4, "disc_mag": 2, "edp2_sep": 3, "edp2_lead": 2}
+ROUND = {"ra": 6, "dec": 6, "z": 5, "disc_mjd": 4, "disc_mag": 2, "edp2_sep": 3, "edp2_lead": 2, "lead_alert": 2}
+SITE_URL = "https://trivialtz.github.io/tns-edp2-explorer/"
+REPO_URL = "https://github.com/trivialTZ/tns-edp2-explorer"
+ZENODO_DOI = None        # set to the concept DOI once the repository is archived on Zenodo (CITATION.cff too)
+DOWNLOAD_DIR = "download"
 
 
 def _clean(v, nd=None):
@@ -117,6 +125,8 @@ def build_catalog(mode: str) -> pd.DataFrame:
             k = pd.read_parquet(EDP2_COADD).drop_duplicates("name").set_index("name")
             cat["edp2_coadd"] = cat["name"].map(k["edp2_coadd"]).astype("boolean")
             cat["edp2_coadd_bands"] = cat["name"].map(k["edp2_coadd_bands"]).astype("string")
+        # bands of the DP2 deep-coadd stamp (build/fetch_edp2_stamps.py), "" when none was fetched
+        cat["edp2_stamp"] = [("".join(ST._dp2_bands(n)) or None) for n in cat["name"]]
     return cat.sort_values(["disc_mjd", "name"]).reset_index(drop=True)
 
 
@@ -302,6 +312,13 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
     print(f"[edp2] {matched:,} objects with a DiaObject, {len(ph):,} points, "
           f"{len(sources)} sources (encrypting; nothing is written in plaintext)")
     shards = shard_payloads(ph, cat)
+    dp2 = ST.dp2_images(e.loc[e["edp2_stamp"].notna(), "name"])
+    e["edp2_stamp"] = e["edp2_stamp"].where(e["name"].isin(set(dp2)))
+    payload["rows"] = table_rows(e, cols)
+    shard_of = cat.set_index("name")["shard"]
+    for n, (b, _) in dp2.items():
+        shards[int(shard_of[n])].setdefault(ST.SHARD_KEY, {})[n] = ST.data_uri(b)
+    print(f"[edp2] {len(dp2)} DP2 deep-coadd stamps embedded in the encrypted shards")
     if host_split is not None:
         pub, priv, pub_imgs, withheld = host_split
         uris = {n: u for n in priv["name"] if (u := H.data_uri(n, C.PRIVATE_CACHE / "hosts_webp"))}
@@ -330,6 +347,216 @@ def spectra_shards(cat: pd.DataFrame) -> dict[int, dict]:
             "t": _clean(r.mjd, 4), "tel": r.tel, "inst": r.inst, "grp": r.grp, "url": r.url,
             "w0": r.w0, "dw": r.dw, "f": [None if v is None or not np.isfinite(v) else float(v) for v in r.f]})
     return out
+
+
+CLF_NORM = C.NORM / "classifiers.parquet"              # build/classifiers.py (public broker outputs + metaDEBASS)
+CLF_OBJ = C.NORM / "classifier_objects.parquet"
+CLF_CARD = C.NORM / "classifier_scorecard.json"
+
+
+def classifier_shards(cat: pd.DataFrame) -> tuple[dict[int, dict], pd.DataFrame | None, dict | None]:
+    """{shard: {name: [track, ...]}}, the long download table and the scorecard; sets the mdb_* columns.
+
+    A track is one survey object ID (a ZTF oid or a Rubin alert diaObjectId) with, per detection number n
+    (index n-1): t = MJD; x = {classifier: [call, conf] or null}; cats = CATS class code; mdb = metaDEBASS
+    {sn, ot[, ia]} probabilities; lab = {classifier: label} for fixed (static / latest) outputs.
+    """
+    for c in ("mdb_call", "mdb_psn", "mdb_pia", "mdb_ndet", "mdb_sv", "mdb_ins", "clf_n"):
+        cat[c] = None
+    if not (CLF_NORM.exists() and CLF_OBJ.exists() and CLF_CARD.exists()):
+        return {}, None, None
+    d = pd.read_parquet(CLF_NORM)
+    o = pd.read_parquet(CLF_OBJ)
+    card = json.loads(CLF_CARD.read_text())
+    timing = {e["key"]: e["timing"] for e in card["experts"]}
+    shard_of = cat.set_index("name")["shard"]
+    d = d[d["name"].isin(shard_of.index)]
+    o = o[o["name"].isin(shard_of.index)]
+    out: dict[int, dict] = {}
+    by_id = {k: g for k, g in d.groupby("object_id", sort=False)}
+    empty = d.iloc[0:0]
+    for r in o.sort_values(["name", "survey"]).itertuples(index=False):
+        g = by_id.get(r.object_id, empty)
+        n = int(r.n_det_max)
+        t = [None] * n
+        for k, m in zip(g["n_det"], g["mjd"]):
+            if 1 <= k <= n and t[k - 1] is None and np.isfinite(m):
+                t[k - 1] = round(float(m), 4)
+        tr = {"id": r.object_id, "sv": r.survey, "b": r.basis, "ins": bool(r.in_sample), "t": t, "x": {}, "lab": {}}
+        for clf, gg in g.groupby("clf", sort=False):
+            if clf == "mdb":
+                m = {"sn": [None] * n, "ot": [None] * n}
+                if r.survey == "ZTF":
+                    m["ia"] = [None] * n
+                for k, conf, pia, lab in zip(gg["n_det"], gg["conf"], gg["p_ia"], gg["label"]):
+                    m["sn"][k - 1] = round(float(conf), 3)
+                    m["ot"][k - 1] = round(1 - float(conf), 3)
+                    if "ia" in m and np.isfinite(pia):
+                        m["ia"][k - 1] = round(float(pia), 3)
+                tr["mdb"] = m
+                continue
+            arr = [None] * n
+            for k, call, conf in zip(gg["n_det"], gg["call"], gg["conf"]):
+                arr[k - 1] = [call, None if not np.isfinite(conf) else round(float(conf), 3)]
+            tr["x"][clf] = arr
+            if timing.get(clf) in ("static", "latest"):
+                tr["lab"][clf] = str(gg["label"].iloc[-1])
+            if clf == "fink_lsst/cats":
+                codes = [None] * n
+                names = {v: k for k, v in {11: "SN-like", 12: "Fast", 13: "Long", 21: "Periodic", 22: "Non-periodic"}.items()}
+                for k, lab in zip(gg["n_det"], gg["label"]):
+                    codes[k - 1] = names.get(str(lab).rsplit(" ", 1)[0], None)
+                tr["cats"] = codes
+        out.setdefault(int(shard_of[r.name]), {}).setdefault(r.name, []).append(tr)
+    # catalogue summary: the metaDEBASS-scored track with the most detections (ZTF on a tie)
+    sc = o[o["basis"] == "det"].sort_values(["name", "n_det_max", "survey"], ascending=[True, False, False]).drop_duplicates("name")
+    last = d[d["clf"] == "mdb"].sort_values("n_det").drop_duplicates("object_id", keep="last").set_index("object_id")
+    summ = {}
+    for r in sc.itertuples(index=False):
+        if r.object_id not in last.index:
+            continue
+        L = last.loc[r.object_id]
+        pia = float(L["p_ia"]) if np.isfinite(L["p_ia"]) else None
+        psn = float(L["conf"])
+        call = ("Ia" if L["call"] == "I" else "SN" if L["call"] in ("S", "N") else "other")
+        summ[r.name] = (call, round(psn, 3), None if pia is None else round(pia, 3), int(L["n_det"]), r.survey, bool(r.in_sample))
+    for j, c in enumerate(("mdb_call", "mdb_psn", "mdb_pia", "mdb_ndet", "mdb_sv", "mdb_ins")):
+        cat[c] = cat["name"].map({k: v[j] for k, v in summ.items()})
+    cat["clf_n"] = cat["name"].map(d[d["clf"] != "mdb"].groupby("name")["clf"].nunique()).fillna(0).astype(int)
+    dl = d.rename(columns={"clf": "classifier", "conf": "score"})[
+        ["name", "survey", "object_id", "n_det", "mjd", "classifier", "call", "score", "p_ia", "label"]]
+    dl = dl.assign(call=dl["call"].map({"I": "SN Ia", "S": "SN (not Ia)", "N": "SN", "O": "not SN", "n": "not Ia"}))
+    return out, dl, card
+
+
+CLF_DL_DESC = {
+    "name": "TNS name without prefix", "survey": "LSST (Rubin alert stream) or ZTF", "object_id": "survey object ID (ZTF oid or Rubin alert diaObjectId; read as string)",
+    "n_det": "detection number (positive detections, metaDEBASS count; for Rubin IDs metaDEBASS did not score, the alert number)",
+    "mjd": "MJD of that detection", "classifier": "classifier key (mdb = metaDEBASS fusion v11)",
+    "call": "what the classifier says at this detection: SN Ia, SN (not Ia), SN (subtype not given), not SN, not Ia",
+    "score": "the classifier's own score for its call (metaDEBASS: P(SN-like))", "p_ia": "metaDEBASS P(SN Ia), ZTF only",
+    "label": "native output, e.g. CATS class and score, stamp top class, Sherlock context",
+}
+
+
+def lead_columns(cat: pd.DataFrame, ph: pd.DataFrame) -> dict:
+    """Did Rubin see it first? Public, from the Rubin alert stream only.
+
+    lead_alert  = TNS discovery MJD - first positive Rubin alert detection (days; > 0: Rubin
+                  detected it earlier). Null when TNS discovery predates the alert stream.
+    rubin_first = rubin   the TNS discovery was made in Rubin data: reported by the Rubin group, an
+                          LSST internal name (e.g. LSST-AP-DO-<diaObjectId>), or a discovery time
+                          within SAME_DAYS of the first positive Rubin alert (brokers and teams that
+                          report from the alert stream)
+                  earlier lead_alert > SAME_DAYS         later  lead_alert < -SAME_DAYS
+                  none    discovered while alerts flowed, no positive alert detection
+                  pre     discovered before the public alert stream began (no comparison)
+    """
+    same = 0.01                       # days (~15 min): the discovery is that alert detection
+    a = ph[(ph["source"] == "lsst_alert") & (ph["kind"] == C.KIND_DET)]
+    start = float(np.floor(a["mjd"].min())) if len(a) else np.inf
+    first = a[a["flux"] > 0].groupby("name")["mjd"].min()
+    disc = cat["disc_mjd"].astype(float)
+    lead = disc - cat["name"].map(first)
+    rubin = (cat["group"].fillna("").astype(str).str.strip().str.lower().eq("rubin")
+             | cat["internal"].fillna("").astype(str).str.contains(r"\bLSST", regex=True)
+             | lead.abs().le(same))
+    pre = disc < start
+    cat["rubin_first"] = np.select([rubin, pre, lead > same, lead < -same], ["rubin", "pre", "earlier", "later"], "none")
+    cat["lead_alert"] = lead.where(~pre | rubin)
+    counts = cat["rubin_first"].value_counts().to_dict()
+    e = cat.loc[cat["rubin_first"] == "earlier", "lead_alert"]
+    return {"alert_start_mjd": start if np.isfinite(start) else None,
+            "counts": {k: int(counts.get(k, 0)) for k in ("rubin", "earlier", "later", "none", "pre")},
+            "median_earlier_days": round(float(e.median()), 2) if len(e) else None}
+
+
+# Bulk downloads (data/download/): plain files for scripts. Columns and meaning in MANIFEST.json.
+CAT_DL = [  # (download column, catalogue column, description)
+    ("tns_name", None, "TNS name with prefix (SN/AT)"),
+    ("name", "name", "TNS name without prefix; the join key for photometry.csv.gz"),
+    ("ra", "ra", "TNS right ascension, deg (ICRS)"),
+    ("dec", "dec", "TNS declination, deg (ICRS)"),
+    ("type", "type", "TNS classification (null if untyped)"),
+    ("redshift", "z", "TNS redshift"),
+    ("disc_mjd", "disc_mjd", "TNS discovery date, MJD"),
+    ("disc_date", None, "TNS discovery date, UTC"),
+    ("disc_mag", "disc_mag", "TNS discovery magnitude"),
+    ("disc_filter", "disc_filter", "TNS discovery filter"),
+    ("reporting_group", "group", "TNS reporting group"),
+    ("internal_names", "internal", "TNS internal names, comma separated"),
+    ("survey_region", "region", "WFD, or the LSST Deep Drilling Field covering the object (positional)"),
+    ("debass", "debass", "DEBASS follow-up status: FINISHED or YES (null if not a target)"),
+    ("rubin_alert_ids", "alert_ids", "Rubin alert-stream diaObjectIds (Fink LSST, <= 2\"), comma separated. Read as strings"),
+    ("rubin_first", "rubin_first", "rubin: TNS discovery made in Rubin data (Rubin group, an LSST internal name, or the first "
+                                   "Rubin alert itself); earlier/later: first positive Rubin alert detection before/after TNS "
+                                   "discovery; none: no alert detection; pre: discovered before the alert stream"),
+    ("lead_alert_days", "lead_alert", "TNS discovery MJD minus first positive Rubin alert detection MJD (> 0: Rubin earlier)"),
+    ("n_tns_spectra", "n_spec", "number of spectra reported to TNS"),
+    ("n_lsstcam_pointings", "n_visits", "Rubin DP2 visit centres within 2.1 deg (public pointing metadata)"),
+]
+PHOT_DL = ["name", "source", "mjd", "band", "flux_njy", "flux_err_njy", "kind", "lim_mag", "note"]
+KIND_NAMES = {C.KIND_DET: "detection", C.KIND_FORCED: "forced", C.KIND_UL: "upper_limit"}
+
+
+def _gz(text: str) -> bytes:
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb", mtime=0, filename="") as g:    # byte-identical rebuilds
+        g.write(text.encode("utf-8"))
+    return buf.getvalue()
+
+
+def write_downloads(data: Path, cat: pd.DataFrame, ph: pd.DataFrame, meta: dict, sources: list[str],
+                    extra: dict[str, tuple[pd.DataFrame, dict]] | None = None) -> int:
+    """catalog.csv, photometry.csv.gz (+ extra {file: (frame, column descriptions)}) and MANIFEST.json."""
+    d = data / DOWNLOAD_DIR
+    if d.exists():
+        shutil.rmtree(d)
+    d.mkdir(parents=True)
+    c = pd.DataFrame(index=cat.index)
+    desc = {}
+    for out, src, why in CAT_DL:
+        if out == "tns_name":
+            c[out] = (cat["prefix"].fillna("") + " " + cat["name"]).str.strip()
+        elif out == "disc_date":
+            c[out] = pd.to_datetime(cat["disc_mjd"] - 40587, unit="D").dt.strftime("%Y-%m-%dT%H:%M:%S")
+        elif src in cat:
+            c[out] = cat[src]
+        else:
+            continue
+        desc[out] = why
+    for s in sources:
+        c[f"n_{s}"] = cat[f"n_{s}"]
+        desc[f"n_{s}"] = f"measurements from {C.SOURCES[s]['label']} (upper limits excluded)"
+    for col, nd in (("ra", 6), ("dec", 6), ("disc_mjd", 5), ("disc_mag", 2), ("lead_alert_days", 2)):
+        if col in c:
+            c[col] = c[col].astype(float).round(nd)
+    p = pd.DataFrame({
+        "name": ph["name"], "source": ph["source"], "mjd": ph["mjd"].round(5), "band": ph["band"],
+        "flux_njy": ph["flux"].round(2), "flux_err_njy": ph["flux_err"].round(2),
+        "kind": ph["kind"].map(KIND_NAMES), "lim_mag": ph["lim_mag"].round(3), "note": ph["note"].fillna(""),
+    })[PHOT_DL]
+    pdesc = {"name": "TNS name without prefix (catalog.csv `name`)", "source": "photometry source key (MANIFEST sources)",
+             "mjd": "MJD (TAI for Rubin, as given by the source otherwise)", "band": "filter label, e.g. lsst-r, ztf-g",
+             "flux_njy": "flux in nJy (AB zero point 31.4: mag = 31.4 - 2.5 log10 flux)", "flux_err_njy": "1-sigma flux error, nJy",
+             "kind": "detection, forced (forced photometry) or upper_limit", "lim_mag": "limiting AB mag for upper limits",
+             "note": "source-specific: instrument, alert ID, flags"}
+    files = {"catalog.csv": (c.to_csv(index=False).encode("utf-8"), len(c), desc),
+             "photometry.csv.gz": (_gz(p.to_csv(index=False)), len(p), pdesc)}
+    for fname, (frame, fdesc) in (extra or {}).items():
+        body = frame.to_csv(index=False)
+        files[fname] = (_gz(body) if fname.endswith(".gz") else body.encode("utf-8"), len(frame), fdesc)
+    size, man = 0, {"title": "TNS x EDP2 Explorer: bulk download", "site": SITE_URL,
+                    "version": meta["built"][:10], "built": meta["built"], "mode": meta["mode"],
+                    "sources": {k: v["label"] for k, v in meta["sources"].items()},
+                    "citation": SITE_URL + "#/data", "files": {}}
+    for fname, (b, n, fdesc) in files.items():
+        (d / fname).write_bytes(b)
+        size += len(b)
+        man["files"][fname] = {"rows": int(n), "bytes": len(b), "sha256": hashlib.sha256(b).hexdigest(), "columns": fdesc}
+    (d / "MANIFEST.json").write_text(json.dumps(man, indent=1) + "\n")
+    meta["download"] = {f: {"rows": v["rows"], "bytes": v["bytes"], "columns": v["columns"]} for f, v in man["files"].items()}
+    return size
 
 
 def write_js(path: Path, call: str, payload) -> int:
@@ -377,8 +604,11 @@ def main():
 
     sources = [s for s in C.SOURCES if s in set(ph["source"])]
     add_source_columns(cat, ph, sources)
+    lead = lead_columns(cat, ph)
+    stamp_names = ST.alert_column(cat)
     cat["shard"] = np.arange(len(cat)) // C.SHARD_SIZE
     spec = spectra_shards(cat)
+    clf, clf_dl, clf_card = classifier_shards(cat)
 
     meta = {
         "mode": a.mode,
@@ -389,6 +619,10 @@ def main():
         "stats": stats_block(),
         "notes": notes(a.mode),
         "regions": ["WFD", *C.DDF_FIELDS],
+        "lead": lead,
+        "cite": {"site": SITE_URL, "repo": REPO_URL, "doi": ZENODO_DOI},
+        "classifiers": clf_card,
+        "stamps": {"alert": len(stamp_names)},
         "spectra": {"n_objects": int((cat["n_spec_plot"] > 0).sum()), "n_spectra": int(cat["n_spec_plot"].sum())},
         "debass": {"n": int(cat["debass"].notna().sum()), "statuses": list(C.DEBASS_STATUSES),
                    "updated": (datetime.fromtimestamp(C.DEBASS_NORM.stat().st_mtime, timezone.utc).date().isoformat()
@@ -430,6 +664,21 @@ def main():
     if (data / "lc").exists():
         shutil.rmtree(data / "lc")
     (data / "lc").mkdir(parents=True)
+    ST.write_alert(stamp_names, data / "stamps")
+    if a.mode == "private":                      # DP2 deep-coadd stamps: plain files, private site only
+        dp2 = ST.dp2_images(cat.loc[cat["edp2_stamp"].notna(), "name"]) if "edp2_stamp" in cat else {}
+        d2 = data / "dp2stamps"
+        if d2.exists():
+            shutil.rmtree(d2)
+        if dp2:
+            d2.mkdir(parents=True)
+            for n, (b, _) in dp2.items():
+                (d2 / f"{n}.webp").write_bytes(b)
+        cat["edp2_stamp"] = cat["edp2_stamp"].where(cat["name"].isin(set(dp2)))
+        meta["stamps"]["dp2"] = len(dp2)
+        catalog["rows"] = table_rows(cat, cols)
+    dl = write_downloads(data, cat, ph, meta, sources,
+                         {"classifiers.csv.gz": (clf_dl, CLF_DL_DESC)} if clf_dl is not None else None)
     size = write_js(data / "catalog.js", "TNSX.onCatalog(", catalog)
 
     v = pd.read_csv(C.VISITS_CSV, usecols=["expMidptMJD", "band", "ra", "dec"])
@@ -441,6 +690,14 @@ def main():
     for sh, objs in shards.items():
         size += write_js(data / "lc" / f"{sh:03d}.js", f"TNSX.onShard({sh},", objs)
     n_lc = len(shards)
+    if (data / "clf").exists():
+        shutil.rmtree(data / "clf")
+    if clf:
+        (data / "clf").mkdir(parents=True)
+        for sh, objs in clf.items():
+            size += write_js(data / "clf" / f"{sh:03d}.js", f"TNSX.onClf({sh},", objs)
+        print(f"[{a.mode}] classifiers: {sum(len(v) for v in clf.values())} objects in {len(clf)} files; "
+              f"metaDEBASS summary for {int(cat['mdb_call'].notna().sum())}")
     if (data / "spec").exists():
         shutil.rmtree(data / "spec")
     if spec:
@@ -450,7 +707,8 @@ def main():
         print(f"[{a.mode}] spectra: {meta['spectra']['n_spectra']} TNS spectra of {meta['spectra']['n_objects']} objects "
               f"in {len(spec)} files")
     print(f"[{a.mode}] wrote {out}/data: {len(cat):,} objects, {n_lc} shards, "
-          f"{len(ph):,} points, {size / 1e6:.1f} MB")
+          f"{len(ph):,} points, {size / 1e6:.1f} MB; {len(stamp_names)} alert stamps; downloads {dl / 1e6:.1f} MB")
+    print(f"[{a.mode}] Rubin first? {lead['counts']} (median lead when earlier: {lead['median_earlier_days']} d)")
     for s in sources:
         print(f"    {s:14s} objects {meta['sources'][s]['n_objects']:5d}  points {meta['sources'][s]['n_points']:8,d}")
 

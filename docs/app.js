@@ -5,7 +5,7 @@
  * Modules share one internal namespace, window.TNSXApp:
  *   app.js (this file) · team.js · filters.js · explore.js · home.js · object.js · about.js
  * team.js adds the password-unlocked EDP2 layer (X.team); without it the site is public only.
- * Routes:  #/  ·  #/explore?<filters>  ·  #/object/<name>  ·  #/about
+ * Routes:  #/  ·  #/explore?<filters>  ·  #/object/<name>  ·  #/classifiers  ·  #/data  ·  #/about
  */
 (function () {
   'use strict';
@@ -51,7 +51,12 @@
     // Columns the object page knows how to show; anything else is listed as key: value.
     KNOWN_COLS: ['name', 'prefix', 'ra', 'dec', 'type', 'z', 'group', 'disc_mjd', 'disc_mag', 'disc_filter', 'internal',
       'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'n_spec_plot', 'region', 'debass',
-      'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc', 'edp2_coadd', 'edp2_coadd_bands']
+      'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc', 'edp2_coadd', 'edp2_coadd_bands', 'edp2_stamp',
+      'lead_alert', 'rubin_first', 'stamp', 'mdb_call', 'mdb_psn', 'mdb_pia', 'mdb_ndet', 'mdb_sv', 'mdb_ins', 'clf_n'],
+    // Classifier calls (build/classifiers.py): I Ia, S SN other than Ia, N SN (subtype not given), O not SN, n not Ia.
+    CALL_LABEL: { I: 'SN Ia', S: 'SN, not Ia', N: 'SN', O: 'not SN', n: 'not Ia' },
+    RF_LABEL: { rubin: 'Discovered in Rubin data', earlier: 'Rubin alert before TNS discovery', later: 'Rubin alert after TNS discovery',
+      none: 'No Rubin alert detection', pre: 'Discovered before the alert stream' }
   };
   var FAM_EXACT = { R: 'R', I: 'I', V: 'V', B: 'B', L: 'L' };
   var FAM_LOWER = { u: 'u', g: 'g', r: 'r', i: 'i', z: 'z', y: 'y', o: 'o', c: 'c', w: 'w', v: 'V', b: 'B', l: 'L', clear: 'Clear' };
@@ -65,6 +70,8 @@
     visits: null, visitsState: 'idle', nearCache: new Map(),
     shards: {}, shardRaw: {}, shardPromises: {}, plotlyPromise: null,
     specRaw: {}, specPromises: {},          // public TNS spectra, data/spec/NNN.js (same shard index as lightcurves)
+    clfRaw: {}, clfPromises: {},            // broker classifications + metaDEBASS, data/clf/NNN.js
+    dp2Stamp: {},                           // DP2 deep-coadd stamps (data URIs) from encrypted shards
     hostImg: {}, hostTeam: new Set(),       // host figures from encrypted shards; host rows only team access shows
     theme: 'auto'
   };
@@ -76,6 +83,7 @@
   TNSX.onVisits = function (d) { ingestVisits(d); };
   TNSX.onShard = function (n, d) { S.shardRaw[Number(n)] = d || {}; };
   TNSX.onSpec = function (n, d) { S.specRaw[Number(n)] = d || {}; };
+  TNSX.onClf = function (n, d) { S.clfRaw[Number(n)] = d || {}; };
 
   // ------------------------------------------------------------------ helpers
   var U = X.U = {};
@@ -394,6 +402,19 @@
     }
     return S.specPromises[n];
   };
+  // Classifier tracks of one shard: {name: [track, ...]} (build/assemble.py classifier_shards). Sparse like spectra.
+  X.loadClf = function (n) {
+    if (!S.clfPromises[n]) {
+      var src = 'data/clf/' + U.pad3(n) + '.js';
+      S.clfPromises[n] = U.loadScript(src).then(function () {
+        var d = S.clfRaw[n];
+        if (!d) throw new Error(src + ' loaded but did not call TNSX.onClf(' + n + ', …)');
+        return d;
+      });
+      S.clfPromises[n].catch(function () { delete S.clfPromises[n]; });
+    }
+    return S.clfPromises[n];
+  };
   // Host galaxies: a sparse table {cols: ["name", "host_*"...], rows} merged into catalogue columns
   // (null where an object has no host row). Validated before anything is changed. Returns the names set.
   X.checkHostTable = function (t) {
@@ -579,10 +600,12 @@
     } else if (h.indexOf('#/explore') === 0) {
       name = 'explore'; arg = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     } else if (h.indexOf('#/about') === 0) name = 'about';
+    else if (h.indexOf('#/data') === 0) name = 'data';
+    else if (h.indexOf('#/classifiers') === 0) { name = 'classifiers'; arg = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : ''; }
     var prev = S.view;
     S.view = name;
     document.documentElement.setAttribute('data-route', name);
-    ['home', 'explore', 'object', 'about'].forEach(function (k) { document.getElementById('view-' + k).hidden = k !== name; });
+    ['home', 'explore', 'object', 'about', 'data', 'classifiers'].forEach(function (k) { var v = document.getElementById('view-' + k); if (v) v.hidden = k !== name; });
     U.$all('.nav a').forEach(function (a) {
       if (a.getAttribute('data-nav') === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });

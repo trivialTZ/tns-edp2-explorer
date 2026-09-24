@@ -1,0 +1,10 @@
+{
+  "title": "TNS × EDP2 Explorer: lightcurves of TNS transients in the Rubin EDP2 footprint",
+  "upload_type": "software",
+  "creators": [{"name": "Tang, Xianzhe"}],
+  "description": "A static browser of the 9,330 Transient Name Server transients discovered between 2025-02-24 and 2026-01-07 inside the Rubin Observatory EDP2 visit footprint: TNS, ZTF (ALeRCE) and public Rubin alert (Fink) photometry on one flux scale, TNS spectra, sky images and alert cutouts, broker and metaDEBASS classifications, and bulk downloads (docs/data/download/). Proprietary Rubin DP2 data are included only as ciphertext and are not part of the open files.",
+  "keywords": ["transients", "supernovae", "Rubin Observatory", "LSST", "Transient Name Server", "light curves"],
+  "related_identifiers": [
+    {"identifier": "https://trivialtz.github.io/tns-edp2-explorer/", "relation": "isDocumentedBy", "resource_type": "other"}
+  ]
+}

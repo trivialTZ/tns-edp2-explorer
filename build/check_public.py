@@ -12,6 +12,14 @@ and each ciphertext must be padded and look like ciphertext rather than text.
     catalog.js  TNSX.onEnc("catalog",{"iv":B64,"ct":B64});
     NNN.js      TNSX.onEnc("lc-NNN",{"iv":B64,"ct":B64});
 
+Bulk downloads: data/download/ may hold only catalog.csv, the gzipped CSVs listed in
+DOWNLOAD_FILES and MANIFEST.json; the gzipped files are decompressed and scanned like any
+other data file. No other .csv anywhere.
+
+Image stamps: data/stamps/ may hold only <name>.webp Rubin alert cutouts of objects whose
+catalogue row has a `stamp`. DP2 deep-coadd stamps (data/dp2stamps/) exist only in the
+private site, never under docs/.
+
 Host galaxies (diagnostic): the public catalogue's "hosts" table may hold only objects
 this site shows as TNS-typed SN Ia, with host_* columns and no list-membership or DP2
 field; data/hosts/ may hold only <name>.webp figures of those rows. Host rows of the
@@ -21,6 +29,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import gzip
 import json
 import re
 import sys
@@ -49,6 +58,11 @@ HOST_BAD_COL = re.compile(r"list|good|edp2|diaobject|sep_arcsec", re.I)
 HOST_BAD_VALUE = re.compile(r"edp2|dp2|diaobject", re.I)
 HOST_IMG = re.compile(r"\d{4}[0-9A-Za-z]+\.webp")    # TNS names: 2025abc, 2026A, 20250227A
 MAX_HOST_IMG = 150_000
+
+# ---- bulk downloads and image stamps
+DOWNLOAD_FILES = {"catalog.csv", "photometry.csv.gz", "classifiers.csv.gz", "MANIFEST.json"}
+STAMP_IMG = HOST_IMG
+MAX_STAMP_IMG = 40_000
 
 
 def _b64(s: str) -> bytes:
@@ -185,6 +199,34 @@ def check_hosts(root: Path, cat: dict | None) -> list[str]:
     return errs
 
 
+def check_stamps(root: Path, cat: dict | None) -> list[str]:
+    """data/stamps/: alert-cutout strips of catalogue objects with a `stamp`; no DP2 stamps at all."""
+    errs = []
+    if (root / "data" / "dp2stamps").exists():
+        errs.append("data/dp2stamps/: DP2 deep-coadd stamps belong to the private site only")
+    d = root / "data" / "stamps"
+    if not d.exists():
+        return errs
+    want = set()
+    if cat and "stamp" in cat.get("cols", []):
+        js, jn = cat["cols"].index("stamp"), cat["cols"].index("name")
+        want = {str(r[jn]) for r in cat["rows"] if r[js]}
+    have = set()
+    for f in d.iterdir():
+        rel = f"data/stamps/{f.name}"
+        if not f.is_file() or not STAMP_IMG.fullmatch(f.name):
+            errs.append(f"{rel}: data/stamps/ may hold only <TNS name>.webp files")
+            continue
+        if f.stat().st_size > MAX_STAMP_IMG:
+            errs.append(f"{rel}: larger than {MAX_STAMP_IMG} bytes")
+        if f.read_bytes()[:4] != b"RIFF":
+            errs.append(f"{rel}: not a WebP file")
+        have.add(f.stem)
+    if have != want:
+        errs.append(f"data/stamps/: {len(have - want)} images without a catalogue `stamp`, {len(want - have)} missing")
+    return errs
+
+
 def main(root: Path) -> int:
     errs, cat = [], None
     for f in root.rglob("*"):
@@ -193,11 +235,25 @@ def main(root: Path) -> int:
         rel = f.relative_to(root)
         if f.stat().st_size > MAX_BYTES:
             errs.append(f"{rel}: larger than {MAX_BYTES / 1e6:.0f} MB")
-        if f.suffix in {".parquet", ".csv", ".fits", ".npy", ".pkl"}:
+        dl = rel.parts[:2] == ("data", "download")
+        if dl and (len(rel.parts) != 3 or rel.name not in DOWNLOAD_FILES):
+            errs.append(f"{rel}: data/download/ may hold only {sorted(DOWNLOAD_FILES)}")
+        if f.suffix in {".parquet", ".csv", ".fits", ".npy", ".npz", ".pkl"} and not (dl and rel.name == "catalog.csv"):
             errs.append(f"{rel}: raw data file type not allowed in the public site")
         if rel.parts[0] != "data":
             continue
-        txt = f.read_text(errors="ignore")
+        if f.suffix == ".gz":
+            try:
+                txt = gzip.decompress(f.read_bytes()).decode("utf-8", errors="ignore")
+            except (OSError, EOFError) as e:
+                errs.append(f"{rel}: unreadable gzip ({e})")
+                continue
+        else:
+            txt = f.read_text(errors="ignore")
+        if dl and f.name.endswith((".csv", ".csv.gz")):
+            bad = [c for c in txt.split("\n", 1)[0].split(",") if PRIVATE_COL.search(c)]
+            if bad:
+                errs.append(f"{rel}: private columns {bad}")
         if PRIVATE_SOURCE.search(txt):
             errs.append(f"{rel}: contains a private EDP2 source key")
         if DP2_ID.search(txt):
@@ -214,6 +270,7 @@ def main(root: Path) -> int:
                 errs.append(f"{rel}: private sources {bad}")
     errs += check_enc_dir(root)
     errs += check_hosts(root, cat)
+    errs += check_stamps(root, cat)
     for e in errs:
         print(f"check_public: {e}", file=sys.stderr)
     if not errs:

@@ -20,6 +20,7 @@
   var CHECK_TEXT = 'tnsx-edp2 key check v1', AAD_PREFIX = 'tnsx-edp2/v1/';   // build/crypto_layer.py
   var MIN_ITER = 600000, MAX_ITER = 10000000;
   var HOST_IMG_KEY = '_hosts';                                                   // build/hosts.py SHARD_IMG_KEY
+  var STAMP_KEY = '_stamps';                                                     // build/stamps.py SHARD_KEY: DP2 deep-coadd stamps
   var subtle = window.crypto && window.crypto.subtle;                           // absent outside secure contexts
   var NO_CRYPTO = 'This browser cannot decrypt on this page: WebCrypto is only available over https or on localhost.';
   var key = null, tag = '', keyinfo = null, kiPromise = null, blobs = {};
@@ -213,7 +214,7 @@
       Object.keys(e).forEach(function (o) {
         var s = e[o];
         if (!s || typeof s !== 'object') throw new Error('unexpected ' + name + ' payload');
-        if (o === HOST_IMG_KEY) {                         // {name: data:image/webp;base64,...}
+        if (o === HOST_IMG_KEY || o === STAMP_KEY) {      // {name: data:image/webp;base64,...}
           Object.keys(s).forEach(function (n) {
             if (typeof s[n] !== 'string' || !/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(s[n])) throw new Error('unexpected ' + name + ' host figure');
           });
@@ -233,6 +234,7 @@
   T.mergeShard = function (pub, enc) {
     Object.keys(enc).forEach(function (o) {
       if (o === HOST_IMG_KEY) { Object.keys(enc[o]).forEach(function (n) { S.hostImg[n] = enc[o][n]; }); return; }
+      if (o === STAMP_KEY) { Object.keys(enc[o]).forEach(function (n) { S.dp2Stamp[n] = enc[o][n]; }); return; }
       var t = pub[o] || (pub[o] = {});
       Object.keys(enc[o]).forEach(function (k) { t[k] = enc[o][k]; });
     });

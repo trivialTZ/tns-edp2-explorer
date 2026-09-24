@@ -45,6 +45,7 @@
       '<section class="section" aria-labelledby="h-disc"><div class="section-head"><h2 id="h-disc">Discoveries over time</h2>' +
       '<p>TNS discoveries per week. The shaded band is the EDP2 visit window. Click a week to explore it.</p></div>' +
       '<div class="card hist-card"><svg class="dhist" id="dhist" role="img" aria-label="Histogram of discovery dates by week"></svg></div></section>' +
+      leadSection() +
       '<section class="section" aria-labelledby="h-src"><div class="section-head"><h2 id="h-src">Photometry sources</h2>' +
       '<p>Each lightcurve overlays every source below; filter the catalogue by any of them.</p></div><div class="src-grid">' + sourceCards() + '</div></section>' +
       '<section class="section" aria-labelledby="h-feat"><div class="section-head"><h2 id="h-feat">Well-sampled transients</h2>' +
@@ -63,6 +64,8 @@
     });
     drawHist();
     wireHist();
+    drawLead();
+    wireLead();
     H.rendered = true;
   }
   function stat(v, k, d) {
@@ -343,7 +346,116 @@
     H.mapDrawn = true;
   }
 
-  var onResize = U.debounce(function () { if (S.view === 'home' && H.rendered) drawHist(); }, 150);
+  // ------------------------------------------------------------------ did Rubin see it first?
+  // Public: Rubin alert stream (lead_alert, rubin_first). Team access adds the DP2 catalogue (edp2_lead).
+  var LEAD_EDGES = [];
+  for (var le = -60; le <= 60; le += 5) LEAD_EDGES.push(le);
+  var RF = [['rubin', 'discovered in Rubin data'], ['earlier', 'Rubin alert before TNS discovery'], ['later', 'Rubin alert after TNS discovery'],
+    ['none', 'no Rubin alert detection'], ['pre', 'discovered before the alert stream']];
+  function leadValues(kind) {
+    var out = [];
+    for (var i = 0; i < S.N; i++) {
+      var v;
+      if (kind === 'alert') { var rf = U.V(i, 'rubin_first'); if (rf !== 'earlier' && rf !== 'later') continue; v = U.V(i, 'lead_alert'); }
+      else { if (!X.F.isMatched(i)) continue; var tc = U.V(i, 'edp2_tc'); if (!(tc === true || tc === 1)) continue; v = U.V(i, 'edp2_lead'); }
+      if (U.isNum(v)) out.push(v);
+    }
+    return out;
+  }
+  function median(a) { var b = a.slice().sort(function (x, y) { return x - y; }), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : null; }
+  function leadSummary(vals, who) {
+    var first = vals.filter(function (v) { return v > 0; });
+    return '<b>' + U.fint(first.length) + '</b> of ' + U.fint(vals.length) + ' seen first by ' + who +
+      (first.length ? ', median ' + U.fx(median(first), 1) + ' d before TNS discovery' : '');
+  }
+  function leadSection() {
+    if (!U.has('rubin_first')) return '';
+    var c = (S.meta.lead || {}).counts || {}, start = (S.meta.lead || {}).alert_start_mjd;
+    var chips = RF.map(function (r) {
+      return '<a class="rf-chip rf-' + r[0] + '" href="#/explore?rf=' + r[0] + '"><b>' + U.fint(c[r[0]] || 0) + '</b><span>' + esc(r[1]) + '</span></a>';
+    }).join('');
+    var team = S.isPrivate && U.has('edp2_lead');
+    return '<section class="section" aria-labelledby="h-lead"><div class="section-head"><h2 id="h-lead">Did Rubin see it first?</h2>' +
+      '<p>Days between Rubin’s first positive detection and the TNS discovery date. Right of zero, Rubin had it first. “Discovered in Rubin data” counts discoveries reported by Rubin, under an LSST internal name, or at the first Rubin alert itself (brokers and teams reporting from the alert stream); they are left out of the histogram. The public Rubin alert stream starts ' +
+      esc(U.isNum(start) ? U.niceDate(start) : 'late October 2025') + ', so most of this catalogue predates it' +
+      (team ? '; the DP2 catalogue below covers the whole EDP2 window.' : '. Team access adds the DP2 catalogue, which covers the whole EDP2 window.') + '</p></div>' +
+      '<div class="card lead-card"><div class="rf-chips">' + chips + '</div>' +
+      '<div class="lead-panel"><div class="lead-h"><span class="lead-t">Rubin alert stream <span class="muted">· public</span></span><span class="lead-s" id="lead-s-alert"></span></div>' +
+      '<svg class="dhist lhist" id="lhist-alert" role="img" aria-label="Histogram of Rubin alert lead times"></svg></div>' +
+      (team ? '<div class="lead-panel private-panel"><div class="lead-h"><span class="lead-t">' + U.icon('lock', 2).replace('<svg', '<svg width="12" height="12"') +
+        ' Rubin DP2 catalogue <span class="muted">· matched, time-consistent · proprietary</span></span><span class="lead-s" id="lead-s-dp2"></span></div>' +
+        '<svg class="dhist lhist priv" id="lhist-dp2" role="img" aria-label="Histogram of Rubin DP2 lead times"></svg></div>' : '') +
+      '</div></section>';
+  }
+  function drawLeadHist(svg, vals) {
+    if (!svg) return null;
+    var W = Math.max(320, svg.clientWidth || 900), Hh = 170, ml = 40, mr = 8, mt = 14, mb = 26;
+    var e = LEAD_EDGES, nb = e.length + 1, h = new Array(nb).fill(0);     // bin 0: < -60, last: >= +60
+    vals.forEach(function (v) { h[v < e[0] ? 0 : v >= e[e.length - 1] ? nb - 1 : 1 + Math.floor((v - e[0]) / 5)]++; });
+    var mx = Math.max.apply(null, h.concat([1]));
+    var st = mx > 400 ? 200 : mx > 200 ? 100 : mx > 80 ? 50 : mx > 40 ? 20 : mx > 16 ? 10 : mx > 8 ? 4 : 2;
+    var top = Math.ceil(mx / st) * st, pw = W - ml - mr, ph = Hh - mt - mb, bpx = pw / nb, gap = bpx > 6 ? 2 : 1;
+    var y = function (c) { return mt + ph - c / top * ph; }, out = '';
+    for (var g = 0; g <= top; g += st) out += '<line class="grid" x1="' + ml + '" x2="' + (W - mr) + '" y1="' + y(g).toFixed(1) + '" y2="' + y(g).toFixed(1) + '"/><text x="' + (ml - 8) + '" y="' + (y(g) + 4).toFixed(1) + '" text-anchor="end">' + g + '</text>';
+    var x0 = ml + (1 + (0 - e[0]) / 5) * bpx;
+    out += '<line class="zero" x1="' + x0.toFixed(1) + '" x2="' + x0.toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>' +
+      '<text x="' + (x0 - 6).toFixed(1) + '" y="' + (mt + 10) + '" text-anchor="end">TNS first</text><text x="' + (x0 + 6).toFixed(1) + '" y="' + (mt + 10) + '">Rubin first</text>';
+    for (var k = 0; k < nb; k++) {
+      if (!h[k]) continue;
+      var bx = ml + k * bpx + gap / 2, by = y(h[k]);
+      out += '<rect class="bar' + (k === 0 || k === nb - 1 ? ' over' : '') + '" data-k="' + k + '" x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + Math.max(1, bpx - gap).toFixed(1) +
+        '" height="' + (mt + ph - by).toFixed(1) + '" rx="1.5"/>';
+    }
+    out += '<line class="axis" x1="' + ml + '" x2="' + (W - mr) + '" y1="' + (mt + ph) + '" y2="' + (mt + ph) + '"/>';
+    [-60, -30, 0, 30, 60].forEach(function (t) {
+      var tx = ml + (1 + (t - e[0]) / 5) * bpx;
+      out += '<text x="' + tx.toFixed(1) + '" y="' + (Hh - 6) + '" text-anchor="middle">' + (t > 0 ? '+' : t < 0 ? '−' : '') + Math.abs(t) + ' d</text>';
+    });
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Hh);
+    svg.innerHTML = out;
+    return h;
+  }
+  function drawLead() {
+    if (!U.has('rubin_first')) return;
+    var a = leadValues('alert');
+    H.leadAlert = drawLeadHist($('#lhist-alert'), a);
+    var sa = $('#lead-s-alert'); if (sa) sa.innerHTML = leadSummary(a, 'Rubin alerts');
+    if ($('#lhist-dp2')) {
+      var d = leadValues('dp2');
+      H.leadDp2 = drawLeadHist($('#lhist-dp2'), d);
+      $('#lead-s-dp2').innerHTML = leadSummary(d, 'the DP2 catalogue');
+    }
+  }
+  function leadRange(k) {
+    var e = LEAD_EDGES, n = e.length + 1;
+    return k === 0 ? [null, e[0]] : k === n - 1 ? [e[e.length - 1], null] : [e[0] + (k - 1) * 5, e[0] + k * 5];
+  }
+  function leadLabel(r) {
+    var f = function (v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v); };
+    return r[0] == null ? 'more than 60 d after TNS discovery' : r[1] == null ? 'more than 60 d before TNS discovery' : f(r[0]) + ' to ' + f(r[1]) + ' d';
+  }
+  function wireLead() {
+    [['alert', 'alead', 'Rubin alert'], ['dp2', 'elead', 'DP2']].forEach(function (w) {
+      var svg = $('#lhist-' + w[0]);
+      if (!svg) return;
+      svg.addEventListener('mousemove', function (e) {
+        var b = e.target.closest('rect.bar');
+        if (!b) { U.hover.hide(); return; }
+        var k = +b.getAttribute('data-k'), h = w[0] === 'alert' ? H.leadAlert : H.leadDp2;
+        U.hover.show('<div class="hc-t">' + U.plural(h[k], 'transient') + '</div><div class="hc-m">' + esc(w[2]) + ' lead ' + esc(leadLabel(leadRange(k))) + '</div>', e.clientX, e.clientY);
+      });
+      svg.addEventListener('mouseleave', function () { U.hover.hide(); });
+      svg.addEventListener('click', function (e) {
+        var b = e.target.closest('rect.bar');
+        if (!b) return;
+        var r = leadRange(+b.getAttribute('data-k'));
+        var q = w[1] + '=' + (r[0] == null ? '' : r[0]) + '..' + (r[1] == null ? '' : r[1]);
+        X.go('#/explore?' + q + (w[0] === 'alert' ? '&rf=earlier&rf=later' : '&em=1&etc=1'));
+      });
+    });
+  }
+
+  var onResize = U.debounce(function () { if (S.view === 'home' && H.rendered) { drawHist(); drawLead(); } }, 150);
   window.addEventListener('resize', onResize);
 
   X.views.home = {
@@ -358,6 +470,7 @@
         });
       } else {
         drawHist();
+        drawLead();
         if (window.Plotly && H.mapDrawn) window.Plotly.Plots.resize($('#skymap'));
       }
     },

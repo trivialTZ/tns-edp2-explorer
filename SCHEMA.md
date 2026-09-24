@@ -78,7 +78,13 @@ docs/data/catalog.js   TNSX.onCatalog({meta, cols, rows})
 docs/data/visits.js    TNSX.onVisits({cols:["mjd","band","ra","dec"], rows:[[...], ...]})
 docs/data/lc/NNN.js    TNSX.onShard(NNN, {"2025abc": {"ztf": LC, "tns": LC, ...}, ...})
 docs/data/spec/NNN.js  TNSX.onSpec(NNN, {"2025abc": [SPEC, ...], ...})   only shards that hold spectra
+docs/data/clf/NNN.js   TNSX.onClf(NNN, {"2025abc": [TRACK, ...], ...})   only shards that hold classifier output
+docs/data/stamps/<name>.webp                  Rubin alert cutouts: science | template | difference, 3 x 120 px
+docs/data/download/    catalog.csv, photometry.csv.gz, classifiers.csv.gz, MANIFEST.json   (plain files for scripts)
 ```
+
+The private build adds `data/dp2stamps/<name>.webp` (DP2 deep-coadd colour stamps, 160 px, 40″). They
+never go to `docs/`; the public site carries them only inside the encrypted shards (`_stamps`, section 3).
 
 `NNN` is zero-padded to 3 digits; object `i` in catalog order lives in shard
 `i // 100` (catalog column `shard`). `TNSX.onShard` data is not used until any
@@ -99,6 +105,28 @@ resampled onto a uniform wavelength grid of at most 1,200 bins, never finer than
  "w0": first bin centre (Angstrom, observed frame), "dw": bin width (Angstrom), "f": [flux or null]}
 ```
 
+TRACK (build/classifiers.py, via assemble.py `classifier_shards`): one survey object ID (a ZTF oid or a
+Rubin alert diaObjectId). Arrays are indexed by detection number n (index n-1, n <= 20); `b` is `det`
+when n counts positive detections (metaDEBASS scored the ID) or `alert` when it counts every Rubin alert
+(no positive detection, so broker outputs only):
+
+```
+{"id": str, "sv": "LSST"|"ZTF", "b": "det"|"alert", "ins": bool (in metaDEBASS training/calibration),
+ "t": [mjd or null], "x": {classifier: [[call, score] or null, ...]}, "lab": {classifier: label},
+ "cats": [CATS class code or null],          // Fink CATS: 11 SN-like, 12 Fast, 13 Long, 21 Periodic, 22 Non-periodic
+ "mdb": {"sn": [P(SN-like)], "ot": [P(not SN)], "ia": [P(Ia)]}}   // metaDEBASS fusion v11; "ia" for ZTF only
+```
+
+Calls: `I` SN Ia, `S` SN other than Ia, `N` SN (subtype not given), `O` not a supernova, `n` not Ia
+(EarlySNIa below 0.5). `lab` holds the label of classifiers whose output is fixed (stamp classifiers,
+Sherlock context) or object-level (ALeRCE lightcurve classifiers, shown at the last detection only).
+
+Download files (`data/download/`, all public, rebuilt with the site): `catalog.csv` (one row per object),
+`photometry.csv.gz` (every public point: name, source, mjd, band, flux_njy, flux_err_njy, kind, lim_mag,
+note), `classifiers.csv.gz` (TRACK rows in long form) and `MANIFEST.json` (version, per-file rows,
+bytes, SHA-256 and column descriptions). check_public.py allows only these names there, decompresses the
+.gz files and scans them like every other data file.
+
 `catalog.meta`:
 
 ```
@@ -111,7 +139,14 @@ resampled onto a uniform wavelength grid of at most 1,200 bins, never finer than
  "regions": ["WFD", DDF field names...],
  "spectra": {"n_objects", "n_spectra"},
  "debass": {"n", "statuses", "updated"},
- "hosts": {"n_rows", "n_images", "fits_withheld"}}   // only when host products exist
+ "hosts": {"n_rows", "n_images", "fits_withheld"},   // only when host products exist
+ "lead": {"alert_start_mjd", "counts": {rubin, earlier, later, none, pre}, "median_earlier_days"},
+ "stamps": {"alert": int, "dp2": int (private)},
+ "cite": {"site", "repo", "doi" (null until a Zenodo DOI exists)},
+ "classifiers": {"checkpoints": [3,5,10], "experts": [{key,label,sub,surveys,kind,timing,ref}],
+                 "surveys": {sv: {classifier: {"sn"|"ia": {"3"|"5"|"10"|"latest": {n, k, ci, base, n_pos}}}}},
+                 "n_typed", "n_objects", "n_in_sample"},
+ "download": {file: {"rows", "bytes", "columns": {col: description}}}}
 ```
 
 `catalog.hosts` (optional): a sparse host-galaxy table, `{"cols": ["name", "host_*"...], "rows": [[...], ...]}`,
@@ -140,13 +175,19 @@ merges it into catalogue columns at load (null where an object has none).
 | spec_types | TNS spectra as "date instrument (group)", semicolon separated ("" if none); TNS gives no per-spectrum class, the object class is `type` |
 | region | `WFD`, or the LSST Deep Drilling Field (`COSMOS`, `ECDFS`, `EDFS`, `ELAIS-S1`, `XMM-LSS`) when a dp2.Visit aimed within 1 deg of that field's centre (common.DDF_FIELDS) has its centre within 1.75 deg of the object. dp2.Visit has no survey-programme column, so `WFD` also holds commissioning science-validation fields |
 | debass | `FINISHED` or `YES` from the DEBASS sheet's `Following?` column (build/fetch_debass.py; TNS name, else position <= 2"), null otherwise |
+| rubin_first | `rubin` (TNS discovery made in Rubin data: Rubin group, an LSST internal name, or discovery within 0.01 d of the first positive Rubin alert), `earlier` / `later` (first positive Rubin alert detection more than 0.01 d before / after TNS discovery), `none` (discovered while the public alert stream ran, no positive alert detection), `pre` (discovered before the alert stream) |
+| lead_alert | TNS discovery MJD − first positive Rubin alert detection MJD, days (> 0: Rubin earlier); null for `pre` |
+| stamp | `band|mjd|snr|neg` of the Rubin alert whose cutouts are in `data/stamps/<name>.webp` (highest-S/N positive detection, else the strongest negative one, `neg` = 1), null if none |
+| mdb_call, mdb_psn, mdb_pia, mdb_ndet, mdb_sv, mdb_ins | latest metaDEBASS fusion v11 call (`Ia`, `SN`, `other`), P(SN-like), P(Ia) (ZTF only), detection number, survey of the scored ID, and whether that ID was in metaDEBASS training/calibration; null if not scored |
+| clf_n | number of broker classifiers with output for any of the object's IDs |
 | shard | lightcurve shard index |
 
 Private builds add `n_edp2_dia, n_edp2_fp, t0_edp2_dia, t1_edp2_dia,
-edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc, edp2_coadd, edp2_coadd_bands` (the unlocked
+edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc, edp2_coadd, edp2_coadd_bands, edp2_stamp` (the unlocked
 public site adds the same columns from section 3). `edp2_coadd` is true when the TNS position lies
 inside a dp2.CoaddPatches patch polygon and `edp2_coadd_bands` lists that patch's ObsCore
-deep_coadd bands in ugrizy order (build/fetch_edp2_coadd.py). `edp2_id` is the DP2 catalogue
+deep_coadd bands in ugrizy order (build/fetch_edp2_coadd.py). `edp2_stamp` lists the bands of the
+DP2 deep-coadd stamp (build/fetch_edp2_stamps.py; bluest to reddest mapped to B, G, R). `edp2_id` is the DP2 catalogue
 diaObjectId, a different ID space from `alert_ids`. IDs are always strings:
 ~1e17 integers do not survive float64 or JS Number.
 
@@ -237,7 +278,8 @@ catalog  {"v":1,
           "hosts":{"cols":[...], "rows":[...]}}   // optional: encrypted-only host rows, plus the
                                                   // full values of public rows while fits are withheld
 lc-NNN   {"2025abc": {"edp2_dia": LC, "edp2_fp": LC}, ...,  // LC as in section 2; {} if none
-          "_hosts": {"2025xyz": "data:image/webp;base64,..."}}  // optional: figures of encrypted-only host rows
+          "_hosts": {"2025xyz": "data:image/webp;base64,..."},   // optional: figures of encrypted-only host rows
+          "_stamps": {"2025abc": "data:image/webp;base64,..."}}  // optional: DP2 deep-coadd stamps (edp2_stamp)
 ```
 
 The site merges the encrypted `hosts` rows into the host columns by name. Rows

@@ -98,6 +98,25 @@
       addCat({ id: 'rid', label: 'Rubin alert diaObjectId', open: false, get: function (i) { return X.hasRid(i, 'alert') ? 'yes' : 'no'; },
         values: [{ v: 'yes', label: 'Has an alert-stream ID' }, { v: 'no', label: 'No alert-stream ID' }] });
     }
+    // Did Rubin see it first? (build/assemble.py lead_columns; public Rubin alert stream only)
+    if (C.rubin_first !== undefined) {
+      var jrf = C.rubin_first;
+      addCat({ id: 'rf', label: 'Rubin first?', open: false, get: function (i) { return rows[i][jrf] || 'none'; },
+        values: [{ v: 'rubin', label: 'Discovered in Rubin data' }, { v: 'earlier', label: 'Rubin alert before TNS discovery' },
+          { v: 'later', label: 'Rubin alert after TNS discovery' }, { v: 'none', label: 'No Rubin alert detection' },
+          { v: 'pre', label: 'Discovered before the alert stream' }],
+        note: 'First positive Rubin alert detection (Fink LSST) against the TNS discovery date. “Discovered in Rubin data”: reported by Rubin, under an LSST internal name, or at the first Rubin alert itself. The public alert stream starts ' +
+          (S.meta.lead && U.isNum(S.meta.lead.alert_start_mjd) ? U.isoDate(S.meta.lead.alert_start_mjd) : 'late October 2025') + '.' });
+    }
+    // broker classifications and metaDEBASS (build/classifiers.py): latest call of the scored track
+    if (C.mdb_call !== undefined) {
+      var jmc = C.mdb_call, jcn = C.clf_n;
+      addCat({ id: 'mdb', label: 'metaDEBASS says', open: false, get: function (i) { return rows[i][jmc] || '__none__'; },
+        values: [{ v: 'Ia', label: 'SN Ia' }, { v: 'SN', label: 'Supernova' }, { v: 'other', label: 'Not a supernova' }, { v: '__none__', label: 'Not scored' }],
+        note: 'Latest metaDEBASS fusion v11 call. For Rubin alerts it separates supernovae from other transients only.' });
+      addCat({ id: 'clf', label: 'Broker classifications', open: false, get: function (i) { return rows[i][jcn] > 0 ? 'yes' : 'no'; },
+        values: [{ v: 'yes', label: 'Has broker classifier output' }, { v: 'no', label: 'None' }] });
+    }
     addCat({ id: 'cg', label: 'Class group', open: false, get: function (i) { return U.classGroup(rows[i][jt]); },
       values: [{ v: 'Ia', label: 'SN Ia (all subtypes)' }, { v: 'SN', label: 'Other supernovae' }, { v: 'other', label: 'Other classified' }, { v: 'none', label: 'Untyped' }] });
     var jg = C.group, gc = new Map();
@@ -165,6 +184,10 @@
     if (C.host_logm_p50 !== undefined) {
       addNum({ id: 'hlogm', label: 'Host log M*', get: colGetter('host_logm_p50'), edges: linEdges(6, 12, 24), type: 'float', fmt: fmtNum(2), open: false,
         note: 'Bagpipes median, fits that passed QC only. Diagnostic, not for science use.' });
+    }
+    if (C.lead_alert !== undefined) {
+      addNum({ id: 'alead', label: 'Rubin alert lead time', get: colGetter('lead_alert'), edges: linEdges(-60, 60, 24), type: 'float', fmt: fmtNum(1), unit: ' d', open: false,
+        note: 'TNS discovery − first positive Rubin alert detection; > 0 means Rubin saw it first. Objects discovered before the alert stream have no value.' });
     }
     if (C.n_visits_active !== undefined) {
       var gv = colGetter('n_visits_active'), vmx = Math.max.apply(null, colValues(gv).concat([1]));

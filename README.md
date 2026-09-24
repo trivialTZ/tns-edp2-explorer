@@ -11,6 +11,22 @@ FASTDB's processing version.
 
 **Site:** https://trivialtz.github.io/tns-edp2-explorer/
 
+## What each page has
+
+- **Explore**: faceted filters (type, region, DEBASS, sources, Rubin first?, metaDEBASS call and more), a table or sky view, all in the URL.
+- **Object pages**: TNS record, lightcurve, sky images (Legacy Surveys / Pan-STARRS1 / DSS2) and Rubin
+  alert cutouts, broker classifications and metaDEBASS scores per detection, and public TNS spectra.
+- **Classifiers**: how often each broker classifier and metaDEBASS was right on the TNS-typed objects
+  after 3, 5 and 10 detections (`build/classifiers.py`).
+- **Data**: `docs/data/download/` (catalogue, all public photometry, classifier outputs, MANIFEST.json),
+  a Python example, and how to cite. `CITATION.cff` and `.zenodo.json` describe the repository for GitHub's
+  "Cite this repository" and for Zenodo.
+
+Broker classifications come from a metaDEBASS scoring run over this catalogue's ZTF and Rubin alert IDs
+(`rubin_hackathon/data/tnsx_eval_20260924/`: `tools/make_cohort.py`, `tools/run_fetch.py`,
+`tools/run_score.sh`); `build/classifiers.py` exports it. Pitt-Google is not queried (BigQuery bills the
+project), and the Fink ZTF API did not answer during the 2026-09-24 run, so Fink classifiers are Rubin-only.
+
 ## Two builds and a locked layer
 
 | | public (this repo, GitHub Pages) | public, unlocked with the team password | private (never committed) |
@@ -20,7 +36,9 @@ FASTDB's processing version.
 | Rubin alert-stream photometry and diaObjectIds (Fink LSST) | yes | yes | yes |
 | LSSTCam pointing epochs (`dp2.Visit`) | yes | yes | yes |
 | Aggregate TNS × EDP2 cross-match statistics | yes | yes | yes |
+| Rubin alert cutouts, broker classifications, metaDEBASS scores, bulk downloads | yes | yes | yes |
 | EDP2 `DiaSource` and `ForcedSourceOnDiaObject` photometry, DP2 diaObjectIds and separations | **no** (ciphertext only) | yes, decrypted in the browser | yes |
+| DP2 deep-coadd image stamps | **no** (ciphertext only) | yes, decrypted in the browser | yes |
 
 Rubin DP2 catalog products are proprietary for Rubin data-rights holders under
 the [Rubin Data Policy](https://ls.st/rdo-013) (RDO-13, DPOL-506 and DPOL-516),

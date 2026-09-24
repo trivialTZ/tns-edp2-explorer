@@ -45,7 +45,7 @@
       '<div class="lc-plot" id="lc-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:260px;height:10px;margin:0 auto 10px"></span>Loading lightcurve…</div></div></div>' +
       '<div class="lc-foot" id="lc-foot"></div>' +
       '<details class="pts" id="pts"><summary>' + U.icon('chev', 2) + 'Photometry table <span class="muted">· points shown in the plot</span></summary><div id="pts-table"></div></details></section>' +
-      specCardHtml(i) +
+      imgCardHtml(i) + clfCardHtml(i) + specCardHtml(i) +
       '<p class="sr-only" id="obj-live" aria-live="polite"></p></div>';
     wire(root);
     var h1 = root.querySelector('h1');
@@ -53,6 +53,7 @@
     Promise.all([X.loadShard(X.shardOf(i)), X.ensurePlotly()]).then(function (res) {
       if (cur !== i) return;
       fillHostImg(i);
+      fillDp2Stamp(i);
       prepare(i, (res[0] || {})[V(i, 'name')] || {});
       renderControls();
       updatePlot();
@@ -64,6 +65,8 @@
       $('#lc-retry').addEventListener('click', function () { show(name); });
     });
     loadSpectra(i);
+    loadClf(i);
+    wireImg(i);
     if (S.visitsState === 'idle') X.loadVisits();
   }
 
@@ -124,6 +127,12 @@
     if (U.has('n_spec')) {
       var ns = V(i, 'n_spec') || 0, st = String(V(i, 'spec_types') || '');
       h += fact('TNS spectra', ns ? U.fint(ns) : 'None reported', ns && st ? esc(st.split(',').join(', ')) : '');
+    }
+    if (U.has('rubin_first')) {
+      var rf = V(i, 'rubin_first'), la = V(i, 'lead_alert');
+      h += fact('Rubin first?', '<a href="#/explore?rf=' + esc(rf || 'none') + '">' + esc(K.RF_LABEL[rf] || '—') + '</a>',
+        U.isNum(la) && rf !== 'pre' ? 'first positive Rubin alert ' + (la > 0 ? U.fx(la, 1) + ' d before' : U.fx(-la, 1) + ' d after') + ' TNS discovery' :
+          rf === 'pre' ? 'the public alert stream starts ' + esc(U.isoDate((S.meta.lead || {}).alert_start_mjd)) : '');
     }
     if (U.has('n_visits')) h += fact('LSSTCam pointings', U.fint(V(i, 'n_visits')) + ' <span class="muted">within 2.1°</span>',
       U.has('n_visits_active') ? U.fint(V(i, 'n_visits_active')) + ' during [discovery − 30, + 100] d' : '');
@@ -610,6 +619,176 @@
       '<th>Kind</th><th class="num">Flux (nJy)</th><th class="num">± (nJy)</th><th class="num">AB mag</th><th class="num">±</th><th class="num">Limit</th><th>Note</th></tr></thead>' +
       '<tbody>' + (body || '<tr><td colspan="12"><div class="empty">No points shown.</div></td></tr>') + '</tbody></table></div>' +
       (rows.length > MAX ? '<p class="muted" style="margin-top:8px">First ' + MAX + ' of ' + U.fint(rows.length) + ' rows; the CSV has all of them.</p>' : '');
+  }
+
+  // ------------------------------------------------------------------ images
+  // Public sky images come straight from the survey services (nothing stored here); Rubin alert cutouts are
+  // data/stamps/<name>.webp strips (science | template | difference); the DP2 deep-coadd stamp exists only
+  // with team access (encrypted shard) or in the private build (data/dp2stamps/).
+  var IMG = { src: 'ls' };
+  var RETICLE = '<svg class="reticle" viewBox="0 0 34 34" aria-hidden="true"><path d="M0 17h11M23 17h11M17 0v11M17 23v11"/></svg>';
+  var SKY_SRC = {
+    ls: ['Legacy Surveys DR10', function (ra, dec) { return 'https://www.legacysurvey.org/viewer/cutout.jpg?ra=' + ra.toFixed(6) + '&dec=' + dec.toFixed(6) + '&layer=ls-dr10&pixscale=0.25&size=240'; }, 'Legacy DR10'],
+    ps1: ['Pan-STARRS1', function (ra, dec) { return hips('CDS/P/PanSTARRS/DR1/color-z-zg-g', ra, dec); }, 'PS1'],
+    dss: ['DSS2', function (ra, dec) { return hips('CDS/P/DSS2/color', ra, dec); }, 'DSS2']
+  };
+  function hips(id, ra, dec) {
+    return 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits?hips=' + encodeURIComponent(id) +
+      '&width=240&height=240&fov=' + (60 / 3600).toFixed(6) + '&projection=TAN&coordsys=icrs&ra=' + ra.toFixed(6) + '&dec=' + dec.toFixed(6) + '&format=jpg';
+  }
+  function imgCardHtml(i) {
+    var ra = V(i, 'ra'), dec = V(i, 'dec');
+    if (!U.isNum(ra) || !U.isNum(dec)) return '';
+    var st = String(V(i, 'stamp') || '').split('|'), name = V(i, 'name');
+    var h = '<section class="card img-card" aria-labelledby="img-h"><div class="lc-head"><h2 id="img-h">Images</h2><div class="lc-ctl" id="img-ctl">' +
+      seg('imgsrc', 'Sky survey', Object.keys(SKY_SRC).map(function (k) { return [k, SKY_SRC[k][2]]; }), IMG.src) + '</div></div><div class="img-row">';
+    h += '<figure class="img-fig sky"><div class="imgbox"><img id="img-sky" src="' + esc(SKY_SRC[IMG.src][1](ra, dec)) + '" width="240" height="240" loading="lazy" alt="' +
+      esc(SKY_SRC[IMG.src][0]) + ' image around ' + esc(U.fullName(i)) + '">' + RETICLE + '</div>' +
+      '<figcaption><b id="img-sky-cap">' + esc(SKY_SRC[IMG.src][0]) + '</b> · 60″ · north up, east left</figcaption></figure>';
+    if (st.length === 4) {
+      var neg = st[3] === '1';
+      h += '<figure class="img-fig alert"><div class="strip" role="img" aria-label="Rubin alert cutouts: science, template and difference">' +
+        ['Science', 'Template', 'Difference'].map(function (k, j) {
+          return '<div class="tile" style="background-image:url(data/stamps/' + encodeURIComponent(name) + '.webp);background-position:' + (j * 50) + '% 0"><span>' + k + '</span></div>';
+        }).join('') + '</div><figcaption><b>Rubin alert</b> · ' + esc(st[0]) + ' band · ' + esc(U.isoDate(+st[1])) + ' · S/N ' + esc(st[2]) +
+        (neg ? ' · <span class="neg" title="The difference flux is negative: the template is brighter than the new image, usually because the transient was already in the template">negative difference</span>' : '') +
+        ' · 6″, detector orientation</figcaption></figure>';
+    }
+    if (S.isPrivate && V(i, 'edp2_stamp')) {
+      var b = String(V(i, 'edp2_stamp')), src = S.dp2Stamp[name] || (S.meta.mode === 'private' && !S.meta.team ? 'data/dp2stamps/' + encodeURIComponent(name) + '.webp' : '');
+      h += '<figure class="img-fig dp2"><div class="imgbox">' + (src ? '<img id="img-dp2" src="' + src + '" width="160" height="160" alt="Rubin DP2 deep coadd around ' + esc(U.fullName(i)) + '">' :
+        '<div class="sk" id="img-dp2-slot"></div>') + '' + RETICLE + '</div>' +
+        '<figcaption><b>Rubin DP2 deep coadd</b> · ' + esc(b) + ' · 40″ · north up, east left · <span class="priv">proprietary</span></figcaption></figure>';
+    }
+    return h + '</div></section>';
+  }
+  function fillDp2Stamp(i) {
+    var slot = document.getElementById('img-dp2-slot'), uri = S.dp2Stamp[V(i, 'name')];
+    if (slot) slot.outerHTML = uri ? '<img id="img-dp2" src="' + uri + '" width="160" height="160" alt="Rubin DP2 deep coadd around ' + esc(U.fullName(i)) + '">' : '<div class="host-noimg">No stamp</div>';
+  }
+  function wireImg(i) {
+    var ctl = document.getElementById('img-ctl');
+    if (!ctl) return;
+    ctl.onchange = function (e) {
+      if (e.target.name !== 'imgsrc') return;
+      IMG.src = e.target.value;
+      var img = document.getElementById('img-sky'), s2 = SKY_SRC[IMG.src];
+      img.src = s2[1](V(i, 'ra'), V(i, 'dec'));
+      img.alt = s2[0] + ' image around ' + U.fullName(i);
+      document.getElementById('img-sky-cap').textContent = s2[0];
+    };
+  }
+
+  // ------------------------------------------------------------------ classifications (data/clf/NNN.js)
+  var CLF = { track: 0, list: null, i: null };
+  function expertInfo(key) {
+    var ex = ((S.meta.classifiers || {}).experts || []);
+    for (var k = 0; k < ex.length; k++) if (ex[k].key === key) return ex[k];
+    return { key: key, label: key, sub: '', timing: 'alert', kind: 'sn' };
+  }
+  function trackName(t) { return t.sv === 'ZTF' ? 'ZTF · ' + t.id : 'Rubin alerts · ' + t.id; }
+  function clfCardHtml(i) {
+    if (!U.has('clf_n') || !(V(i, 'clf_n') > 0 || V(i, 'mdb_call'))) return '';
+    return '<section class="card clf-card" aria-labelledby="clf-h"><div class="lc-head"><h2 id="clf-h">Classifications</h2><div class="lc-ctl" id="clf-ctl"></div></div>' +
+      '<p class="clf-lede">What each broker classifier, and the metaDEBASS meta-classifier, said as the detections came in. ' +
+      '<a href="#/classifiers">How often are they right?</a></p><div id="clf-body"><div class="sk" style="height:120px"></div></div></section>';
+  }
+  function loadClf(i) {
+    CLF.list = null; CLF.i = i; CLF.track = 0;
+    if (!document.getElementById('clf-body')) return;
+    X.loadClf(X.shardOf(i)).then(function (d) {
+      if (cur !== i) return;
+      CLF.list = (d || {})[V(i, 'name')] || [];
+      var best = 0;
+      CLF.list.forEach(function (t, k) { if (t.mdb && (!CLF.list[best].mdb || t.t.length > CLF.list[best].t.length)) best = k; });
+      CLF.track = best;
+      renderClf();
+    }).catch(function (e) {
+      if (cur !== i) return;
+      var b = document.getElementById('clf-body');
+      if (b) b.innerHTML = '<p class="muted">The classifications could not be loaded (' + esc(e.message) + ').</p>';
+    });
+  }
+  // Shade = confidence in the call itself. SuperNNova reports P(SN) and EarlySNIa P(Ia) whatever the call;
+  // the others report the probability of the class they call.
+  function callConf(key, call, conf) {
+    if (!U.isNum(conf)) return null;
+    if (key === 'fink_lsst/snn') return call === 'N' ? conf : 1 - conf;
+    if (key === 'fink_lsst/early_snia') return call === 'I' ? conf : 1 - conf;
+    return conf;
+  }
+  function clfCell(call, conf, title, isLatest) {
+    if (!call) return '<td class="c-none"></td>';
+    var op = U.isNum(conf) ? Math.max(0.35, Math.min(1, 0.35 + 0.65 * conf)) : 0.85;
+    return '<td class="c-' + call + (isLatest ? ' latest' : '') + '" data-tip="' + esc(title) + '"><i style="opacity:' + op.toFixed(2) + '"></i></td>';
+  }
+  function renderClf() {
+    var body = document.getElementById('clf-body'), ctl = document.getElementById('clf-ctl');
+    if (!body || !CLF.list) return;
+    if (!CLF.list.length) { body.innerHTML = '<p class="muted">No classifier output for this transient.</p>'; return; }
+    var nsv = {};
+    CLF.list.forEach(function (t2) { nsv[t2.sv] = (nsv[t2.sv] || 0) + 1; });
+    ctl.innerHTML = CLF.list.length > 1 ? seg('clftrack', 'Survey object', CLF.list.map(function (t2, k) {
+      return [String(k), (t2.sv === 'ZTF' ? 'ZTF' : 'Rubin') + (nsv[t2.sv] > 1 ? ' …' + String(t2.id).slice(-4) : '')];
+    }), String(CLF.track)) : '';
+    ctl.onchange = function (e) { if (e.target.name === 'clftrack') { CLF.track = +e.target.value; renderClf(); } };
+    var t = CLF.list[CLF.track], n = t.t.length, disc = V(CLF.i, 'disc_mjd'), unit = t.b === 'alert' ? 'alert' : 'detection';
+    var head = '<tr><th class="lab" scope="col">' + esc(trackName(t)) + '</th>';
+    for (var k = 0; k < n; k++) {
+      var dt = U.isNum(t.t[k]) && U.isNum(disc) ? t.t[k] - disc : null;
+      head += '<th scope="col" data-tip="' + esc(unit + ' ' + (k + 1) + (U.isNum(t.t[k]) ? ' · ' + U.isoDate(t.t[k]) + (dt != null ? ' · ' + (dt < 0 ? '−' : '+') + Math.abs(dt).toFixed(1) + ' d from discovery' : '') : '')) + '">' + (k + 1) + '</th>';
+    }
+    head += '</tr>';
+    var rows = '';
+    if (t.mdb) {
+      var ins = t.ins ? ' <span class="pill outline" title="This object was in metaDEBASS’s training or calibration set, so its scores are in-sample">trained on it</span>' : '';
+      rows += '<tr class="mdb"><th class="lab" scope="row"><b>metaDEBASS</b><small>fusion v11' + (t.sv === 'LSST' ? ' · SN vs not SN' : '') + '</small>' + ins + '</th>';
+      for (k = 0; k < n; k++) {
+        var sn = t.mdb.sn[k], ia = t.mdb.ia ? t.mdb.ia[k] : null;
+        if (!U.isNum(sn)) { rows += '<td class="c-none"></td>'; continue; }
+        var ot = 1 - sn, tip = 'metaDEBASS after ' + unit + ' ' + (k + 1) + ': ' + (U.isNum(ia) ? 'P(Ia) ' + ia.toFixed(2) + ' · P(other SN) ' + (sn - ia).toFixed(2) : 'P(SN-like) ' + sn.toFixed(2)) + ' · P(not SN) ' + ot.toFixed(2);
+        rows += '<td class="stack" data-tip="' + esc(tip) + '">' + (U.isNum(ia) ? '<i class="c-I" style="height:' + (100 * ia).toFixed(0) + '%"></i><i class="c-S" style="height:' + (100 * (sn - ia)).toFixed(0) + '%"></i>' :
+          '<i class="c-N" style="height:' + (100 * sn).toFixed(0) + '%"></i>') + '<i class="c-O" style="height:' + (100 * ot).toFixed(0) + '%"></i></td>';
+      }
+      rows += '</tr>';
+    }
+    var keys = ((S.meta.classifiers || {}).experts || []).map(function (e) { return e.key; }).filter(function (k2) { return t.x[k2]; });
+    Object.keys(t.x).forEach(function (k2) { if (keys.indexOf(k2) < 0) keys.push(k2); });
+    keys.forEach(function (key) {
+      var e = expertInfo(key), arr = t.x[key];
+      rows += '<tr><th class="lab" scope="row"><a href="' + esc(e.ref || '#/classifiers') + '" target="_blank" rel="noopener noreferrer">' + esc(e.label) + '</a><small>' + esc(e.sub || '') + '</small></th>';
+      for (var k3 = 0; k3 < n; k3++) {
+        var c = arr[k3];
+        if (!c) { rows += '<td class="c-none"></td>'; continue; }
+        var lab = t.lab[key] || (key === 'fink_lsst/cats' && t.cats ? ({ 11: 'SN-like', 12: 'Fast', 13: 'Long', 21: 'Periodic', 22: 'Non-periodic' }[t.cats[k3]] || 'CATS') + (U.isNum(c[1]) ? ' ' + c[1].toFixed(2) : '') :
+          key === 'fink_lsst/early_snia' ? 'P(Ia) ' + (U.isNum(c[1]) ? c[1].toFixed(2) : '') : 'P(SN) ' + (U.isNum(c[1]) ? c[1].toFixed(2) : ''));
+        rows += clfCell(c[0], callConf(key, c[0], c[1]), e.label + ' after ' + unit + ' ' + (k3 + 1) + ': ' + (K.CALL_LABEL[c[0]] || c[0]) + ' · ' + lab + (e.timing === 'latest' ? ' (object-level, from the full lightcurve)' : ''), e.timing === 'latest');
+      }
+      rows += '</tr>';
+    });
+    var latest = keys.map(function (key) {
+      var e = expertInfo(key), arr = t.x[key], last = null, lk = -1;
+      for (var k4 = arr.length - 1; k4 >= 0; k4--) if (arr[k4]) { last = arr[k4]; lk = k4; break; }
+      if (!last) return '';
+      var lab = t.lab[key] || (key === 'fink_lsst/cats' && t.cats ? ({ 11: 'SN-like', 12: 'Fast', 13: 'Long', 21: 'Periodic', 22: 'Non-periodic' }[t.cats[lk]] || '') + (U.isNum(last[1]) ? ' ' + last[1].toFixed(2) : '') :
+        (key === 'fink_lsst/early_snia' ? 'P(Ia) ' : 'P(SN) ') + (U.isNum(last[1]) ? last[1].toFixed(2) : ''));
+      return '<tr><td>' + esc(e.label) + ' <span class="muted">' + esc(e.sub || '') + '</span></td><td><span class="callpill c-' + last[0] + '">' + esc(K.CALL_LABEL[last[0]] || last[0]) + '</span></td><td class="mono">' + esc(lab) + '</td><td class="num">' + (lk + 1) + '</td></tr>';
+    }).join('');
+    var tru = V(CLF.i, 'type');
+    body.innerHTML = '<div class="clf-scroll"><table class="clf-grid">' + head + rows + '</table></div>' +
+      '<div class="clf-legend"><span><i class="c-I"></i>SN Ia</span><span><i class="c-S"></i>SN, not Ia</span><span><i class="c-N"></i>SN (no subtype)</span><span><i class="c-O"></i>not SN</span><span><i class="c-n"></i>not Ia</span>' +
+      '<span class="muted">Stronger colour: more confident. Columns: ' + unit + ' number' + (t.b === 'det' ? ' (positive detections)' : ' (every Rubin alert, including negative differences)') + '.</span></div>' +
+      '<div class="table-wrap clf-latest"><table class="data"><thead><tr><th>Classifier</th><th>Latest call</th><th>Output</th><th class="num">At ' + unit + '</th></tr></thead><tbody>' + latest + '</tbody></table></div>' +
+      '<p class="clf-foot">' + (tru ? 'TNS classification: <b>' + esc(tru) + '</b>. ' : 'No TNS classification yet. ') +
+      (t.b === 'alert' ? 'metaDEBASS scores Rubin objects with at least one positive detection; every alert of this one is a negative difference, so only broker outputs are shown. ' : '') +
+      (t.sv === 'LSST' && t.mdb ? 'For Rubin alerts, metaDEBASS v11 separates supernova-like from other transients but has no Ia training labels yet, so it gives no Ia probability. ' : '') +
+      'Scores are research outputs, not classifications.</p>';
+    body.onmousemove = function (e) {
+      var c = e.target.closest('[data-tip]');
+      if (!c) { U.hover.hide(); return; }
+      U.hover.show('<div class="hc-m">' + esc(c.getAttribute('data-tip')) + '</div>', e.clientX, e.clientY);
+    };
+    body.onmouseleave = function () { U.hover.hide(); };
   }
 
   X.onVisitsChanged = function () { if (S.view === 'object' && O) { O.near = null; updatePlot(); } };

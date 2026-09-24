@@ -68,7 +68,14 @@
 
       '<h2>How to use it</h2>' +
       '<p><a href="#/explore">Explore</a> is a faceted browser in the style of single-cell data portals: pick values in the rail on the left, drag the range sliders, and the counts beside every other value update to show what remains. Active filters sit above the results as chips, and the whole state lives in the page URL, so a filtered list can be bookmarked or shared.</p>' +
-      '<p>Each transient has its own page with the TNS record, links to other archives and the lightcurve. Search from anywhere with <span class="kbd">⌘K</span> or <span class="kbd">/</span>, and step through the current list with ← and →.</p>' +
+      '<p>Each transient has its own page with the TNS record, links to other archives, the lightcurve, sky images, broker classifications and any public TNS spectra. Search from anywhere with <span class="kbd">⌘K</span> or <span class="kbd">/</span>, and step through the current list with ← and →.</p>' +
+      '<p><a href="#/classifiers">Classifiers</a> shows how often each broker classifier, and the metaDEBASS meta-classifier, was right on the spectroscopically typed transients. <a href="#/data">Data</a> has the catalogue and every public photometry point as plain files, a Python example, and how to cite the site and its sources.</p>' +
+      '<h3>Did Rubin see it first?</h3>' +
+      '<p>Each transient is compared with Rubin’s first positive alert detection. “Discovered in Rubin data” means the TNS discovery itself came from Rubin: reported by the Rubin group, under an LSST internal name, or timed at the first Rubin alert (brokers and teams that report from the alert stream). The public alert stream began in late October 2025, so earlier discoveries cannot be compared in public data' +
+      (M.team_access || S.isPrivate ? '; the DP2 catalogue, available with team access, covers the whole EDP2 window' : '') + '.</p>' +
+      '<h3>Images</h3>' +
+      '<p>Every page shows a 60″ sky image from the Legacy Surveys DR10 viewer, or Pan-STARRS1 and DSS2 through CDS hips2fits, loaded from those services when you open the page. Transients with Rubin alerts also show the science, template and difference cutouts of their strongest alert (6″, from the public alert packet via Fink)' +
+      (S.isPrivate ? ', and DP2-matched transients show a DP2 deep-coadd colour stamp (40″, proprietary)' : '') + '.</p>' +
       '<h3>Rubin identifiers</h3>' +
       '<p>Rubin names each difference-image object with a <span class="mono">diaObjectId</span>. The alert stream and the DP2 catalogue use separate ID spaces, so one transient has unrelated IDs in each, and this site links both to TNS by position (within ' + S.matchR + '″). ' +
       'Search takes a full ID or any prefix of ' + K.RID_MIN_PREFIX + ' or more digits' + (S.isPrivate ? '' : ' (alert-stream IDs here' + (M.team_access ? '; DP2 catalogue IDs only with team access' : '') + ')') + ', and <span class="mono">#/object/&lt;id&gt;</span> opens the transient. ' +
@@ -109,8 +116,12 @@
         'queried through the NOIRLab Astro Data Lab; the Pan-STARRS1 Surveys and PS1 public science archive (Chambers et al. 2016, arXiv:1612.05560; Flewelling et al. 2020, ApJS 251, 7) via MAST and CDS hips2fits; ' +
         'and the Digitized Sky Surveys, produced at the Space Telescope Science Institute under U.S. Government grant NAG W-2166. SED fits use Bagpipes (Carnall et al. 2018, MNRAS 480, 4379) with Nautilus (Lange 2023, MNRAS 525, 3181); ' +
         'host photometry uses HostPhot (Müller-Bravo et al. 2022, JOSS 7, 4508).</li>' : '') +
+      '<li><strong>Classifiers</strong>: Fink SuperNNova (Möller &amp; de Boissière 2020, MNRAS 491, 4277), CATS (Fraga et al. 2024, A&amp;A 692, A208) and EarlySNIa (Leoni et al. 2022, A&amp;A 663, A13); ' +
+        'ALeRCE stamp (Carrasco-Davis et al. 2021, AJ 162, 231) and lightcurve classifiers (Sánchez-Sáez et al. 2021, AJ 161, 141); Lasair Sherlock (Williams et al. 2024, RASTI 3, 362). ' +
+        'metaDEBASS is a research meta-classifier trained on these broker outputs and early lightcurves; its scores are research outputs, not classifications.</li>' +
+      '<li><strong>Sky images</strong>: Legacy Surveys DR10 cutouts, and Pan-STARRS1 and DSS2 through the CDS hips2fits service. Rubin alert cutouts come from the public alert packets via Fink.</li>' +
       '<li>Link-outs to <a href="https://www.wiserep.org/" target="_blank" rel="noopener">WISeREP</a> (Yaron &amp; Gal-Yam 2012, PASP 124, 668) and the <a href="https://www.legacysurvey.org/" target="_blank" rel="noopener">DESI Legacy Imaging Surveys</a> viewer. Charts use <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">Plotly.js</a>; the browsing flow follows LSST DESC FASTDB.</li>' +
-      '</ul></div></article>';
+      '</ul><p>To cite the site and these sources, see <a href="#/data">Data &amp; citation</a>.</p></div></article>';
   }
   X.views.about = {
     init: function () { render(); },

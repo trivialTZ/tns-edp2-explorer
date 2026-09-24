@@ -1,0 +1,81 @@
+{
+ "title": "TNS x EDP2 Explorer: bulk download",
+ "site": "https://trivialtz.github.io/tns-edp2-explorer/",
+ "version": "2026-09-24",
+ "built": "2026-09-24T17:08:59+00:00",
+ "mode": "public",
+ "sources": {
+  "lsst_alert": "LSST alerts (Fink)",
+  "lsst_alert_fp": "LSST alert forced (Fink)",
+  "ztf": "ZTF alerts (ALeRCE)",
+  "ztf_fp": "ZTF forced (ALeRCE)",
+  "tns": "TNS reported"
+ },
+ "citation": "https://trivialtz.github.io/tns-edp2-explorer/#/data",
+ "files": {
+  "catalog.csv": {
+   "rows": 9330,
+   "bytes": 1281814,
+   "sha256": "895f6233bbe6a87e917e61a1660c8e29de0927e7083d5b181cfc68fabe8ad71b",
+   "columns": {
+    "tns_name": "TNS name with prefix (SN/AT)",
+    "name": "TNS name without prefix; the join key for photometry.csv.gz",
+    "ra": "TNS right ascension, deg (ICRS)",
+    "dec": "TNS declination, deg (ICRS)",
+    "type": "TNS classification (null if untyped)",
+    "redshift": "TNS redshift",
+    "disc_mjd": "TNS discovery date, MJD",
+    "disc_date": "TNS discovery date, UTC",
+    "disc_mag": "TNS discovery magnitude",
+    "disc_filter": "TNS discovery filter",
+    "reporting_group": "TNS reporting group",
+    "internal_names": "TNS internal names, comma separated",
+    "survey_region": "WFD, or the LSST Deep Drilling Field covering the object (positional)",
+    "debass": "DEBASS follow-up status: FINISHED or YES (null if not a target)",
+    "rubin_alert_ids": "Rubin alert-stream diaObjectIds (Fink LSST, <= 2\"), comma separated. Read as strings",
+    "rubin_first": "rubin: TNS discovery made in Rubin data (Rubin group, an LSST internal name, or the first Rubin alert itself); earlier/later: first positive Rubin alert detection before/after TNS discovery; none: no alert detection; pre: discovered before the alert stream",
+    "lead_alert_days": "TNS discovery MJD minus first positive Rubin alert detection MJD (> 0: Rubin earlier)",
+    "n_tns_spectra": "number of spectra reported to TNS",
+    "n_lsstcam_pointings": "Rubin DP2 visit centres within 2.1 deg (public pointing metadata)",
+    "n_lsst_alert": "measurements from LSST alerts (Fink) (upper limits excluded)",
+    "n_lsst_alert_fp": "measurements from LSST alert forced (Fink) (upper limits excluded)",
+    "n_ztf": "measurements from ZTF alerts (ALeRCE) (upper limits excluded)",
+    "n_ztf_fp": "measurements from ZTF forced (ALeRCE) (upper limits excluded)",
+    "n_tns": "measurements from TNS reported (upper limits excluded)"
+   }
+  },
+  "photometry.csv.gz": {
+   "rows": 237729,
+   "bytes": 3205807,
+   "sha256": "14af545493f3d82ba9a7dc5038f93a4b4823f760e5ae794d17ec54bd7f9913d8",
+   "columns": {
+    "name": "TNS name without prefix (catalog.csv `name`)",
+    "source": "photometry source key (MANIFEST sources)",
+    "mjd": "MJD (TAI for Rubin, as given by the source otherwise)",
+    "band": "filter label, e.g. lsst-r, ztf-g",
+    "flux_njy": "flux in nJy (AB zero point 31.4: mag = 31.4 - 2.5 log10 flux)",
+    "flux_err_njy": "1-sigma flux error, nJy",
+    "kind": "detection, forced (forced photometry) or upper_limit",
+    "lim_mag": "limiting AB mag for upper limits",
+    "note": "source-specific: instrument, alert ID, flags"
+   }
+  },
+  "classifiers.csv.gz": {
+   "rows": 71156,
+   "bytes": 411142,
+   "sha256": "144a775a5f658f25d0b6cbec3dec93a8bb735c4235845301f74a6a77cfedb707",
+   "columns": {
+    "name": "TNS name without prefix",
+    "survey": "LSST (Rubin alert stream) or ZTF",
+    "object_id": "survey object ID (ZTF oid or Rubin alert diaObjectId; read as string)",
+    "n_det": "detection number (positive detections, metaDEBASS count; for Rubin IDs metaDEBASS did not score, the alert number)",
+    "mjd": "MJD of that detection",
+    "classifier": "classifier key (mdb = metaDEBASS fusion v11)",
+    "call": "what the classifier says at this detection: SN Ia, SN (not Ia), SN (subtype not given), not SN, not Ia",
+    "score": "the classifier's own score for its call (metaDEBASS: P(SN-like))",
+    "p_ia": "metaDEBASS P(SN Ia), ZTF only",
+    "label": "native output, e.g. CATS class and score, stamp top class, Sherlock context"
+   }
+  }
+ }
+}
