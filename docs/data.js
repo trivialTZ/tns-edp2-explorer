@@ -42,7 +42,7 @@
   function bibtex() {
     var c = S.meta.cite || {}, v = String(S.meta.built || '').slice(0, 10), y = v.slice(0, 4) || '2026';
     return '@misc{tnsx_edp2_explorer,\n' +
-      '  author       = {Tang, Xianzhe},\n' +
+      '  author       = {Tang, Xianzhe TZ},\n' +
       '  title        = {{TNS $\\times$ EDP2 Explorer: lightcurves of TNS transients in the Rubin EDP2 footprint}},\n' +
       '  year         = {' + y + '},\n' +
       '  version      = {' + v + '},\n' +

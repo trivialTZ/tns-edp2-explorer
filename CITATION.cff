@@ -6,7 +6,7 @@ title: "TNS × EDP2 Explorer: lightcurves of TNS transients in the Rubin EDP2 fo
 type: software
 authors:
   - family-names: Tang
-    given-names: Xianzhe
+    given-names: "Xianzhe TZ"
 repository-code: "https://github.com/trivialTZ/tns-edp2-explorer"
 url: "https://trivialtz.github.io/tns-edp2-explorer/"
 abstract: >-
