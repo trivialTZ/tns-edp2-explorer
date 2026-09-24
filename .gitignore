@@ -1,0 +1,13 @@
+# Raw and normalized caches (rebuildable; public data but large)
+cache/
+# Anything proprietary must never be here; belt and braces
+private/
+*edp2*.parquet
+*.env
+.env*
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local handoff note (contains account-specific marker fields)
+build/TNS_FETCH.md

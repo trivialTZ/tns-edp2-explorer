@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse to commit if docs/ contains proprietary EDP2 fields.
+exec python3 build/check_public.py docs

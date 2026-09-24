@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TNS EDP2 Explorer</title>
+<meta name="description" content="Browse TNS transients discovered 2025-03 to 2026-01 inside the Rubin DP2 footprint, with lightcurves from TNS, ZTF (ALeRCE) and public Rubin alerts (Fink).">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f6fe0'/%3E%3Cpath d='M5 23 C10 23 11 8 15 8 S20 19 27 21' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div id="private-banner" class="private-banner" role="alert" hidden></div>
+<header class="topbar">
+  <a class="brand" href="#/" aria-label="TNS EDP2 Explorer, search page">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M5 23 C10 23 11 8 15 8 S20 19 27 21"/></svg>
+    <span class="brand-text">TNS <span class="brand-x">×</span> EDP2 Explorer</span>
+  </a>
+  <span id="mode-badge" class="mode-badge" hidden></span>
+  <nav class="topnav" aria-label="Main">
+    <a href="#/" data-nav="list">Search</a>
+    <a href="#/object" data-nav="object" id="nav-object" hidden>Object</a>
+    <a href="#/about" data-nav="about">About</a>
+  </nav>
+  <button type="button" id="theme-btn" class="btn btn-ghost theme-btn" aria-label="Colour theme: automatic" title="Colour theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5 A8.5 8.5 0 0 1 12 20.5 Z" class="fill"/></svg>
+    <span id="theme-label">Auto</span>
+  </button>
+</header>
+
+<main id="main" tabindex="-1">
+  <div id="view-loading" class="view loading-view">
+    <p class="loading-msg"><span class="spinner" aria-hidden="true"></span> Loading catalog…</p>
+    <noscript><p class="error-box">This site needs JavaScript to browse the catalog.</p></noscript>
+  </div>
+  <section id="view-list" class="view" hidden aria-label="Object search"></section>
+  <section id="view-object" class="view" hidden aria-label="Object"></section>
+  <section id="view-about" class="view" hidden aria-label="About"></section>
+</main>
+
+<footer class="footer">
+  <span id="footer-built"></span>
+  <span>Data: <a href="https://www.wis-tns.org/">TNS</a>, <a href="https://alerce.online/">ALeRCE</a>/ZTF, <a href="https://lsst.fink-portal.org/">Fink</a>/Rubin alerts, Rubin DP2 pointings. <a href="#/about">About &amp; credits</a></span>
+</footer>
+</body>
+</html>
