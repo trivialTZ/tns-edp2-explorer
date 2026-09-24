@@ -2,48 +2,93 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TNS EDP2 Explorer</title>
-<meta name="description" content="Browse TNS transients discovered 2025-03 to 2026-01 inside the Rubin DP2 footprint, with lightcurves from TNS, ZTF (ALeRCE) and public Rubin alerts (Fink).">
+<meta name="description" content="TNS transients discovered Feb 2025 to Jan 2026 inside the Rubin EDP2 footprint, with lightcurves from ZTF, public Rubin alerts and TNS.">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f6fe0'/%3E%3Cpath d='M5 23 C10 23 11 8 15 8 S20 19 27 21' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#FAF9F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0C" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23141413'/%3E%3Cpath d='M6 22c4 0 5-12 9-12s5 9 11 10' fill='none' stroke='%23FAF9F5' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<script>
+  // Before first paint: pin the saved theme and tell CSS which skeleton to show.
+  (function () {
+    try { var t = localStorage.getItem('tnsx-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    var h = location.hash || '';
+    var r = /^#\/(explore|object|about)/.exec(h);
+    document.documentElement.setAttribute('data-route', r ? r[1] : (/^#\/\?/.test(h) ? 'explore' : 'home'));
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
+<link rel="preload" href="data/catalog.js" as="script">
 <link rel="stylesheet" href="style.css">
 <script src="app.js" defer></script>
+<script src="filters.js" defer></script>
+<script src="explore.js" defer></script>
+<script src="home.js" defer></script>
+<script src="object.js" defer></script>
+<script src="about.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
-<div id="private-banner" class="private-banner" role="alert" hidden></div>
+<div id="private-strip" class="private-strip" role="note" hidden></div>
 <header class="topbar">
-  <a class="brand" href="#/" aria-label="TNS EDP2 Explorer, search page">
-    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M5 23 C10 23 11 8 15 8 S20 19 27 21"/></svg>
-    <span class="brand-text">TNS <span class="brand-x">×</span> EDP2 Explorer</span>
-  </a>
-  <span id="mode-badge" class="mode-badge" hidden></span>
-  <nav class="topnav" aria-label="Main">
-    <a href="#/" data-nav="list">Search</a>
-    <a href="#/object" data-nav="object" id="nav-object" hidden>Object</a>
-    <a href="#/about" data-nav="about">About</a>
-  </nav>
-  <button type="button" id="theme-btn" class="btn btn-ghost theme-btn" aria-label="Colour theme: automatic" title="Colour theme">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5 A8.5 8.5 0 0 1 12 20.5 Z" class="fill"/></svg>
-    <span id="theme-label">Auto</span>
-  </button>
+  <div class="topbar-inner">
+    <a class="wordmark" href="#/" aria-label="TNS EDP2 Explorer home">TNS <span class="wm-x">×</span> EDP2 <span class="wm-sub">Explorer</span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#/" data-nav="home">Home</a>
+      <a href="#/explore" data-nav="explore">Explore</a>
+      <a href="#/about" data-nav="about">About</a>
+    </nav>
+    <span class="bar-spacer"></span>
+    <span id="mode-badge" class="mode-badge" hidden></span>
+    <button type="button" class="searchbtn" id="open-search" aria-label="Search transients (Ctrl+K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <span class="ph">Search transients</span><span class="kbd" id="kbd-hint">⌘K</span>
+    </button>
+    <button type="button" class="iconbtn" id="theme-btn" aria-label="Colour theme: automatic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>
+    </button>
+  </div>
 </header>
 
 <main id="main" tabindex="-1">
-  <div id="view-loading" class="view loading-view">
-    <p class="loading-msg"><span class="spinner" aria-hidden="true"></span> Loading catalog…</p>
-    <noscript><p class="error-box">This site needs JavaScript to browse the catalog.</p></noscript>
+  <!-- Static first paint: the Home hero renders before data/catalog.js arrives. -->
+  <section id="view-home" class="view" aria-label="Home">
+    <div id="boot-home" class="wrap">
+      <div class="hero">
+        <h1>Lightcurves for every TNS transient in the Rubin EDP2 footprint</h1>
+        <p class="lede">Transients reported to the Transient Name Server between February 2025 and January 2026, each inside the area Rubin observed for its second data preview.</p>
+        <div class="hero-search"><div class="spot"><div class="spot-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" disabled placeholder="Loading the catalogue…" aria-label="Search transients"></div></div></div>
+      </div>
+      <div class="stats" aria-hidden="true">
+        <div class="card stat"><div class="sk"></div><div class="sk sk-line" style="width:70%;margin-top:14px"></div></div>
+        <div class="card stat"><div class="sk"></div><div class="sk sk-line" style="width:70%;margin-top:14px"></div></div>
+        <div class="card stat"><div class="sk"></div><div class="sk sk-line" style="width:70%;margin-top:14px"></div></div>
+        <div class="card stat"><div class="sk"></div><div class="sk sk-line" style="width:70%;margin-top:14px"></div></div>
+      </div>
+      <div class="section card map-card" aria-hidden="true"><div class="skymap"><div class="sk"></div></div></div>
+    </div>
+  </section>
+  <section id="view-explore" class="view" aria-label="Explore" hidden></section>
+  <section id="view-object" class="view" aria-label="Transient" hidden></section>
+  <section id="view-about" class="view" aria-label="About" hidden></section>
+  <div id="boot-generic" class="wrap boot-generic" aria-hidden="true">
+    <div class="sk" style="height:44px;width:40%"></div>
+    <div class="sk" style="height:16px;width:60%"></div>
+    <div class="sk" style="height:420px"></div>
   </div>
-  <section id="view-list" class="view" hidden aria-label="Object search"></section>
-  <section id="view-object" class="view" hidden aria-label="Object"></section>
-  <section id="view-about" class="view" hidden aria-label="About"></section>
+  <div id="boot-error" class="wrap" hidden></div>
 </main>
 
 <footer class="footer">
-  <span id="footer-built"></span>
-  <span>Data: <a href="https://www.wis-tns.org/">TNS</a>, <a href="https://alerce.online/">ALeRCE</a>/ZTF, <a href="https://lsst.fink-portal.org/">Fink</a>/Rubin alerts, Rubin DP2 pointings. <a href="#/about">About &amp; credits</a></span>
+  <div class="footer-inner">
+    <span id="footer-built">TNS × EDP2 Explorer</span>
+    <span>Data: <a href="https://www.wis-tns.org/">TNS</a> · <a href="https://alerce.online/">ALeRCE</a>/ZTF · <a href="https://lsst.fink-portal.org/">Fink</a>/Rubin alerts · Rubin DP2 pointings · <a href="#/about">About &amp; credits</a></span>
+  </div>
 </footer>
+<div id="hovercard" class="hovercard" role="tooltip" hidden></div>
 </body>
 </html>

@@ -1,7 +1,7 @@
 # TNS × EDP2 explorer
 
 A static lightcurve browser for the 9,330 TNS transients discovered between
-MJD 60730 and 61047 (2025-02-23 to 2026-01-17) that lie within 2.1° of a
+MJD 60730 and 61047 (2025-02-24 to 2026-01-07) that lie within 2.1° of a
 Rubin EDP2 (Data Preview 2) visit centre. Each object's page overlays
 photometry from every source we could collect, on a common nJy scale. The
 design follows the flow of LSST DESC's

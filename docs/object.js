@@ -1,0 +1,470 @@
+/* TNS x EDP2 Explorer — object page and lightcurve. */
+(function () {
+  'use strict';
+  var X = window.TNSXApp, S = X.S, U = X.U, K = X.K;
+  var $ = U.$, esc = U.esc, V = U.V;
+  var LC = { srcOff: new Set(), famOff: new Set(), showUL: true, showFP: true, snCut: true, y: 'flux', x: 'mjd', ticks: true };
+  var O = null;       // current object's plot data
+  var cur = null;     // current object index
+
+  // ------------------------------------------------------------------ page
+  function purgePlot() {
+    var el = document.getElementById('lc-plot');
+    if (el && window.Plotly && el._fullLayout) window.Plotly.purge(el);
+  }
+  function plotMessage(html) {
+    purgePlot();
+    var el = document.getElementById('lc-plot');
+    if (el) el.innerHTML = '<div class="lc-msg"><div>' + html + '</div></div>';
+  }
+  function show(name) {
+    var root = document.getElementById('view-object');
+    var i = S.byName.get(name);
+    if (i === undefined) i = S.byName.get(U.normQuery(name));
+    purgePlot();
+    U.hover.hide();
+    if (i === undefined) {
+      cur = null; O = null;
+      document.title = 'Not found · TNS EDP2 Explorer';
+      root.innerHTML = '<div class="wrap"><div class="prose" style="margin:0"><p class="eyebrow">Not in this catalogue</p><h1 tabindex="-1">No transient named “' + esc(name) + '”</h1>' +
+        '<p>This site covers ' + U.fint(S.N) + ' TNS transients inside the Rubin EDP2 footprint. <a href="https://www.wis-tns.org/object/' + encodeURIComponent(U.normQuery(name)) +
+        '" target="_blank" rel="noopener">Look it up on TNS</a> or <a href="' + esc(X.exploreHash()) + '">go back to Explore</a>.</p></div></div>';
+      return;
+    }
+    cur = i; S.lastObj = i; O = null;
+    document.title = U.fullName(i) + ' · TNS EDP2 Explorer';
+    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) +
+      '<section class="card lc-card" aria-labelledby="lc-h"><div class="lc-head"><h2 id="lc-h">Lightcurve</h2><div class="lc-ctl" id="lc-ctl"></div></div>' +
+      '<div id="lc-legend"></div>' +
+      '<div class="lc-plot" id="lc-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:260px;height:10px;margin:0 auto 10px"></span>Loading lightcurve…</div></div></div>' +
+      '<div class="lc-foot" id="lc-foot"></div>' +
+      '<details class="pts" id="pts"><summary>' + U.icon('chev', 2) + 'Photometry table <span class="muted">· points shown in the plot</span></summary><div id="pts-table"></div></details></section>' +
+      '<p class="sr-only" id="obj-live" aria-live="polite"></p></div>';
+    wire(root);
+    var h1 = root.querySelector('h1');
+    if (h1 && document.activeElement && document.activeElement !== document.body) h1.focus({ preventScroll: true });
+    Promise.all([X.loadShard(X.shardOf(i)), X.ensurePlotly()]).then(function (res) {
+      if (cur !== i) return;
+      prepare(i, (res[0] || {})[V(i, 'name')] || {});
+      renderControls();
+      updatePlot();
+    }).catch(function (e) {
+      if (cur !== i) return;
+      console.error(e);
+      var msg = /plotly/i.test(e.message) ? 'The plotting library could not be loaded from cdn.jsdelivr.net (offline?).' : 'The lightcurve file could not be loaded (' + esc(e.message) + ').';
+      plotMessage(msg + '<br><button type="button" class="btn btn-sm" id="lc-retry" style="margin-top:12px">Try again</button>');
+      $('#lc-retry').addEventListener('click', function () { show(name); });
+    });
+    if (S.visitsState === 'idle') X.loadVisits();
+  }
+
+  function topHtml(i) {
+    var res = X.results(), pos = res.indexOf(i), n = res.length;
+    var prev = pos > 0 ? res[pos - 1] : null, next = pos >= 0 && pos < n - 1 ? res[pos + 1] : null;
+    return '<div class="obj-top"><nav class="crumbs" aria-label="Breadcrumb"><a href="' + esc(X.exploreHash()) + '">Explore</a>' + U.icon('right', 2) +
+      '<span aria-current="page">' + esc(U.fullName(i)) + '</span></nav>' +
+      '<nav class="prevnext" aria-label="Previous and next in the current list"><span class="pos">' + (pos >= 0 ? U.fint(pos + 1) + ' of ' + U.fint(n) : 'not in the current list') + '</span>' +
+      '<button type="button" class="btn btn-sm" data-rel="-1"' + (prev == null ? ' disabled' : '') + ' title="Previous (← or [)">' + U.icon('left', 2) + (prev != null ? esc(V(prev, 'name')) : 'Previous') + '</button>' +
+      '<button type="button" class="btn btn-sm" data-rel="1"' + (next == null ? ' disabled' : '') + ' title="Next (→ or ])">' + (next != null ? esc(V(next, 'name')) : 'Next') + U.icon('right', 2) + '</button></nav></div>';
+  }
+  function fact(label, html, sub) {
+    return '<div><dt>' + esc(label) + '</dt><dd>' + html + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</dd></div>';
+  }
+  function copyBtn(text, label) {
+    return '<button type="button" class="copy" data-copy="' + esc(text) + '" aria-label="Copy ' + esc(label) + '" title="Copy ' + esc(label) + '">' + U.icon('copy', 1.8) + '</button>';
+  }
+  function extLink(href, label, title) {
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + esc(label) + U.icon('ext', 2) + '</a>';
+  }
+  function heroHtml(i) {
+    var name = V(i, 'name'), pre = V(i, 'prefix'), type = V(i, 'type'), z = V(i, 'z');
+    var ra = V(i, 'ra'), dec = V(i, 'dec'), disc = V(i, 'disc_mjd');
+    var internal = String(V(i, 'internal') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var alerts = String(V(i, 'alert_ids') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var sexa = U.raHms(ra) + ' ' + U.decDms(dec);
+    var h = '<header class="obj-hero"><div class="obj-title"><h1 tabindex="-1">' + (pre ? '<span class="pfx">' + esc(pre) + '</span>' : '') + esc(name) + '</h1>' +
+      '<div class="tags">' + (type ? '<span class="pill">' + esc(type) + '</span>' : '<span class="pill outline">Untyped</span>') +
+      (U.isNum(z) ? '<span class="muted tabular">z = ' + U.fx(z, 4) + '</span>' : '') + '</div></div>';
+    h += '<div class="coords">' +
+      '<span class="coord"><span class="lbl">RA</span><span class="mono">' + U.fx(ra, 6) + '°</span>' + copyBtn(U.fx(ra, 6), 'RA in degrees') + '</span>' +
+      '<span class="coord"><span class="lbl">Dec</span><span class="mono">' + U.signed(dec, 6) + '°</span>' + copyBtn((dec >= 0 ? '+' : '-') + Math.abs(dec).toFixed(6), 'Dec in degrees') + '</span>' +
+      '<span class="coord"><span class="mono">' + esc(sexa) + '</span>' + copyBtn(sexa.replace('−', '-'), 'sexagesimal coordinates') + '</span></div>';
+    h += '<dl class="facts">';
+    h += fact('Discovered', esc(U.niceDate(disc)) + ' <span class="muted">' + esc(U.isoDateTime(disc).slice(11)) + ' UTC</span>', 'MJD ' + U.fx(disc, 4));
+    h += fact('Discovery magnitude', U.isNum(V(i, 'disc_mag')) ? '<span class="tabular">' + U.fx(V(i, 'disc_mag'), 2) + '</span>' + (V(i, 'disc_filter') ? ' <span class="muted">' + esc(V(i, 'disc_filter')) + '</span>' : '') : '—');
+    h += fact('Reporting group', esc(V(i, 'group') || '—'));
+    h += fact('Internal names', internal.length ? internal.map(function (s) { return '<span class="mono">' + esc(s) + '</span>'; }).join('<br>') : '—');
+    if (U.has('n_spec')) {
+      var ns = V(i, 'n_spec') || 0, st = String(V(i, 'spec_types') || '');
+      h += fact('TNS spectra', ns ? U.fint(ns) : 'None reported', ns && st ? esc(st.split(',').join(', ')) : '');
+    }
+    if (U.has('n_visits')) h += fact('LSSTCam pointings', U.fint(V(i, 'n_visits')) + ' <span class="muted">within 2.1°</span>',
+      U.has('n_visits_active') ? U.fint(V(i, 'n_visits_active')) + ' during [discovery − 30, + 100] d' : '');
+    S.cols.filter(function (c) {
+      if (K.KNOWN_COLS.indexOf(c) >= 0) return false;
+      var m = /^(n|t0|t1)_(.+)$/.exec(c);
+      return !(m && ((S.meta.sources || {})[m[2]] || K.SRC_SHORT[m[2]]));
+    }).forEach(function (c) { var v = V(i, c); h += fact(c, v == null || v === '' ? '—' : esc(typeof v === 'object' ? JSON.stringify(v) : v)); });
+    h += '</dl>';
+    if (S.isPrivate) {
+      var matched = X.F.isMatched(i), tc = V(i, 'edp2_tc');
+      h += '<p class="private-label">' + U.icon('lock', 2).replace('<svg', '<svg width="12" height="12"') + 'Rubin DP2 · proprietary</p><dl class="facts private-facts">';
+      h += fact('EDP2 DiaObject', V(i, 'edp2_id') ? '<span class="mono">' + esc(V(i, 'edp2_id')) + '</span> ' + (matched ? '<span class="pill private">matched</span>' : '<span class="pill outline">beyond ' + S.matchR + '″</span>') : '—');
+      h += fact('EDP2 separation', U.isNum(V(i, 'edp2_sep')) ? U.fx(V(i, 'edp2_sep'), 3) + '″' : '—');
+      h += fact('EDP2 nDiaSources', U.isNum(V(i, 'edp2_ndia')) ? U.fint(V(i, 'edp2_ndia')) : '—');
+      h += fact('EDP2 lead time', U.isNum(V(i, 'edp2_lead')) ? U.fx(V(i, 'edp2_lead'), 2) + ' d' : '—', 'TNS discovery − first positive EDP2 detection');
+      h += fact('Time-consistent', tc === true || tc === 1 ? 'Yes' : tc === false || tc === 0 ? 'No' : '—');
+      h += '</dl>';
+    }
+    var L = [extLink('https://www.wis-tns.org/object/' + encodeURIComponent(name), 'TNS'),
+      extLink('https://www.wiserep.org/search?name=' + encodeURIComponent(name), 'WISeREP', 'WISeREP spectra search')];
+    var ztf = [];
+    internal.forEach(function (s) { var m = s.match(/\bZTF\d{2}[a-z]{7}\b/g); if (m) m.forEach(function (x) { if (ztf.indexOf(x) < 0) ztf.push(x); }); });
+    ztf.forEach(function (id) { L.push(extLink('https://alerce.online/object/' + id, 'ALeRCE ' + id)); });
+    alerts.forEach(function (id) { L.push(extLink('https://lsst.fink-portal.org/' + encodeURIComponent(id), 'Fink LSST ' + id)); });
+    if (U.isNum(ra) && U.isNum(dec)) L.push(extLink('https://www.legacysurvey.org/viewer?ra=' + ra.toFixed(6) + '&dec=' + dec.toFixed(6) + '&layer=ls-dr10&zoom=16&mark=' + ra.toFixed(6) + ',' + dec.toFixed(6), 'Legacy Survey'));
+    h += '<div class="links" aria-label="External links">' + L.join('') + '</div></header>';
+    return h;
+  }
+  function wire(root) {
+    root.querySelector('.prevnext').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-rel]');
+      if (b && !b.disabled) rel(+b.getAttribute('data-rel'));
+    });
+    root.addEventListener('click', function (e) {
+      var c = e.target.closest('button.copy');
+      if (!c) return;
+      U.copyText(c.getAttribute('data-copy')).then(function () {
+        c.classList.add('done'); c.innerHTML = U.icon('check', 2.2);
+        $('#obj-live').textContent = 'Copied ' + c.getAttribute('data-copy');
+        setTimeout(function () { c.classList.remove('done'); c.innerHTML = U.icon('copy', 1.8); }, 1400);
+      }).catch(function () { $('#obj-live').textContent = 'Copy failed'; });
+    });
+    $('#pts', root).addEventListener('toggle', function (e) { if (e.target.open) renderPointsTable(); });
+  }
+  function rel(d) {
+    var res = X.results(), pos = res.indexOf(cur);
+    if (pos < 0) return false;
+    var j = pos + d;
+    if (j < 0 || j >= res.length) return false;
+    X.go('#/object/' + encodeURIComponent(V(res[j], 'name')));
+    return true;
+  }
+
+  // ------------------------------------------------------------------ lightcurve data
+  function prepare(i, lcs) {
+    var order = S.srcKeys.slice();
+    Object.keys(lcs).forEach(function (k) { if (order.indexOf(k) < 0) order.push(k); });
+    var pts = [], srcCount = {}, famCount = {}, famBands = {}, nUL = 0, nFP = 0;
+    order.forEach(function (s) {
+      var lc = lcs[s];
+      if (!lc || !lc.t) return;
+      for (var k = 0; k < lc.t.length; k++) {
+        var b = lc.b ? lc.b[k] : '', fam = U.bandFamily(b), kind = lc.k ? lc.k[k] : 0;
+        pts.push({ s: s, t: lc.t[k], b: b, fam: fam, f: lc.f ? lc.f[k] : null, e: lc.e ? lc.e[k] : null, k: kind, l: lc.l ? lc.l[k] : null, x: lc.x ? lc.x[k] : '' });
+        srcCount[s] = (srcCount[s] || 0) + 1;
+        famCount[fam] = (famCount[fam] || 0) + 1;
+        (famBands[fam] = famBands[fam] || {})[b] = 1;
+        if (kind === 2) nUL++; else if (kind === 1) nFP++;
+      }
+    });
+    var srcs = order.filter(function (s) { return srcCount[s]; }), sym = {}, ex = 0;
+    srcs.forEach(function (s) { sym[s] = K.SRC_SYMBOL[s] || K.EXTRA_SYMBOLS[ex++ % K.EXTRA_SYMBOLS.length]; });
+    O = { i: i, name: V(i, 'name'), disc: V(i, 'disc_mjd'), pts: pts, srcs: srcs, srcCount: srcCount, sym: sym,
+      fams: K.FAMILIES.filter(function (f) { return famCount[f]; }), famCount: famCount, famBands: famBands, nUL: nUL, nFP: nFP, shown: [], refs: [] };
+  }
+
+  function seg(name, label, opts, curv) {
+    return '<span class="seg" role="radiogroup" aria-label="' + esc(label) + '">' + opts.map(function (o) {
+      return '<label><input type="radio" name="' + name + '" value="' + o[0] + '"' + (o[0] === curv ? ' checked' : '') + '><span>' + esc(o[1]) + '</span></label>';
+    }).join('') + '</span>';
+  }
+  function toggle(id, label, on, n, disabled, hidden) {
+    return '<label class="toggle" id="' + id + '-wrap"' + (hidden ? ' hidden' : '') + '><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + (disabled ? ' disabled' : '') + '><span>' + esc(label) +
+      (n != null ? ' <span class="n">' + U.fint(n) + '</span>' : '') + '</span></label>';
+  }
+  function renderControls() {
+    var ctl = $('#lc-ctl'), leg = $('#lc-legend');
+    if (!ctl || !O) return;
+    ctl.innerHTML = seg('ymode', 'Y axis', [['flux', 'Flux'], ['mag', 'Magnitude']], LC.y) + seg('xmode', 'X axis', [['mjd', 'MJD'], ['rel', 'Days since discovery']], LC.x) +
+      '<button type="button" class="btn btn-sm" id="lc-csv" title="Download the points shown in the plot">' + U.icon('download', 1.9) + 'CSV</button>';
+    if (!O.pts.length) { leg.innerHTML = ''; wireControls(); return; }
+    var ink = U.cssVar('--ink');
+    leg.innerHTML = '<div class="lc-legend"><div class="grp" role="group" aria-label="Sources"><span class="gl">Sources</span>' + O.srcs.map(function (s) {
+      return '<label class="lchip" title="' + esc(U.srcLabel(s) + ': ' + ((S.meta.sources[s] || {}).desc || '')) + '"><input type="checkbox" data-src="' + esc(s) + '"' + (LC.srcOff.has(s) ? '' : ' checked') + '>' +
+        '<span>' + U.symbolSvg(O.sym[s], ink) + esc(U.srcShort(s)) + ' <span class="n">' + U.fint(O.srcCount[s]) + '</span></span></label>';
+    }).join('') + '<button type="button" class="linkbtn" data-all="src" style="margin-left:4px">All</button></div>' +
+      '<div class="grp" role="group" aria-label="Bands"><span class="gl">Bands</span>' + O.fams.map(function (f) {
+        return '<label class="lchip" title="Band labels: ' + esc(Object.keys(O.famBands[f] || {}).join(', ')) + '"><input type="checkbox" data-fam="' + esc(f) + '"' + (LC.famOff.has(f) ? '' : ' checked') + '>' +
+          '<span><i class="sw" style="background:' + U.famColor(f) + '"></i>' + esc(f) + ' <span class="n">' + U.fint(O.famCount[f]) + '</span></span></label>';
+      }).join('') + '<button type="button" class="linkbtn" data-all="fam" style="margin-left:4px">All</button></div></div>' +
+      '<div class="lc-opts">' + toggle('opt-ul', 'Upper limits', LC.showUL, O.nUL, !O.nUL) + toggle('opt-fp', 'Forced photometry', LC.showFP, O.nFP, !O.nFP) +
+      toggle('opt-sn', 'Forced S/N ≥ 3 only', LC.snCut, null, false, LC.y !== 'mag') + toggle('opt-ticks', 'LSSTCam pointings', LC.ticks) + '</div>';
+    wireControls();
+  }
+  function wireControls() {
+    var card = $('.lc-card');
+    card.onchange = function (e) {
+      var t = e.target;
+      if (t.hasAttribute('data-src')) setIn(LC.srcOff, t.getAttribute('data-src'), !t.checked);
+      else if (t.hasAttribute('data-fam')) setIn(LC.famOff, t.getAttribute('data-fam'), !t.checked);
+      else if (t.name === 'ymode') { LC.y = t.value; var w = $('#opt-sn-wrap'); if (w) w.hidden = LC.y !== 'mag'; }
+      else if (t.name === 'xmode') LC.x = t.value;
+      else if (t.id === 'opt-ul') LC.showUL = t.checked;
+      else if (t.id === 'opt-fp') LC.showFP = t.checked;
+      else if (t.id === 'opt-sn') LC.snCut = t.checked;
+      else if (t.id === 'opt-ticks') LC.ticks = t.checked;
+      else return;
+      updatePlot();
+    };
+    card.onclick = function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      if (b.id === 'lc-csv') { downloadLc(); return; }
+      var all = b.getAttribute('data-all');
+      if (!all) return;
+      var set = all === 'src' ? LC.srcOff : LC.famOff, keys = all === 'src' ? O.srcs : O.fams;
+      var allOn = keys.every(function (k) { return !set.has(k); });
+      keys.forEach(function (k) { setIn(set, k, allOn); });   // "All" toggles between all on and all off
+      renderControls(); updatePlot();
+    };
+  }
+  function setIn(set, k, add) { if (add) set.add(k); else set.delete(k); }
+
+  function shownPoints() {
+    var out = [], LN = 2.5 / Math.LN10;
+    O.nLowSN = 0;
+    for (var k = 0; k < O.pts.length; k++) {
+      var p = O.pts[k];
+      if (LC.srcOff.has(p.s) || LC.famOff.has(p.fam)) continue;
+      if (p.k === 2 && !LC.showUL) continue;
+      if (p.k === 1 && !LC.showFP) continue;
+      var y = null, ey = null, lim = false, m = null, me = null, lm = null;
+      if (p.k === 2) {
+        lm = U.isNum(p.l) ? p.l : (U.isNum(p.e) && p.e > 0 ? K.ZP - 2.5 * Math.log10(5 * p.e) : null);
+        if (lm == null) continue;
+        lim = true;
+        y = LC.y === 'mag' ? lm : U.flux(lm);
+      } else {
+        if (!U.isNum(p.f)) continue;
+        if (p.f > 0) { m = U.mag(p.f); me = U.isNum(p.e) ? LN * p.e / p.f : null; }
+        if (LC.y === 'mag') {
+          if (!(p.f > 0)) continue;
+          if (p.k === 1 && LC.snCut && U.isNum(p.e) && p.e > 0 && p.f / p.e < 3) { O.nLowSN++; continue; }
+          y = m; ey = me;
+        } else { y = p.f; ey = U.isNum(p.e) ? p.e : null; }
+      }
+      out.push({ p: p, x: LC.x === 'rel' ? p.t - O.disc : p.t, y: y, ey: ey, lim: lim, mag: m, magErr: me, limMag: lm });
+    }
+    return out;
+  }
+  function quantile(sorted, q) {
+    if (!sorted.length) return null;
+    var pos = (sorted.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+  }
+  // y range from detections + forced points (robust to a few wild values); limits stretch it
+  // in magnitude space and are counted when they sit far above the flux range.
+  function yRange(shown, mode) {
+    var lo = [], hi = [], lims = [];
+    shown.forEach(function (s) {
+      if (s.lim) { lims.push(s.y); return; }
+      var e = s.ey || 0;
+      if (mode === 'mag') e = Math.min(e, 0.6);
+      lo.push(s.y - e); hi.push(s.y + e);
+    });
+    var a, b, nAbove = 0;
+    if (lo.length) {
+      lo.sort(function (x, y) { return x - y; }); hi.sort(function (x, y) { return x - y; });
+      var q = lo.length > 150 ? 0.003 : 0;
+      a = quantile(lo, q); b = quantile(hi, 1 - q);
+      if (mode === 'mag') lims.forEach(function (v) { a = Math.min(a, v); b = Math.max(b, v); });
+      else {
+        a = Math.min(a, 0); b = Math.max(b, 0);
+        lims.forEach(function (v) { if (v > b * 1.6) nAbove++; else b = Math.max(b, v); });
+      }
+    } else if (lims.length) {
+      a = Math.min.apply(null, lims); b = Math.max.apply(null, lims);
+      if (mode !== 'mag') a = 0;
+    } else return null;
+    var pad = (b - a) * 0.07 || (mode === 'mag' ? 0.5 : Math.abs(b) * 0.2 || 1);
+    return { range: mode === 'mag' ? [b + pad, a - pad] : [a - pad, b + pad], nAbove: nAbove };
+  }
+
+  function updatePlot() {
+    var el = document.getElementById('lc-plot');
+    if (!O || !el || !window.Plotly) return;
+    U.hover.hide();
+    var shown = shownPoints();
+    O.shown = shown;
+    var traces = [], refs = [], groups = new Map();
+    shown.forEach(function (s) {
+      var cls = s.lim ? 'l' : s.p.k === 1 ? 'f' : 'd', key = s.p.s + '|' + s.p.fam + '|' + cls, g = groups.get(key);
+      if (!g) { g = { s: s.p.s, fam: s.p.fam, cls: cls, x: [], y: [], e: [], refs: [] }; groups.set(key, g); }
+      g.x.push(s.x); g.y.push(s.y); g.e.push(s.ey == null ? 0 : s.ey); g.refs.push(s);
+    });
+    var card = U.cssVar('--card');
+    groups.forEach(function (g) {
+      var col = U.famColor(g.fam), sym = O.sym[g.s] || 'circle';
+      if (g.cls === 'f' && !/-open$/.test(sym)) sym += '-open';
+      if (g.cls === 'l') sym = K.LIMIT_SYMBOL;
+      var open = /-open$/.test(sym);
+      traces.push({ type: 'scatter', mode: 'markers', x: g.x, y: g.y, hoverinfo: 'none',
+        marker: { symbol: sym, size: g.cls === 'l' ? 8 : g.s === 'tns' ? 11 : 8, color: col, opacity: g.cls === 'l' ? 0.7 : g.cls === 'f' ? 0.8 : 0.95,
+          line: { color: open ? col : card, width: open ? 1.5 : 0.8 } },
+        error_y: g.cls === 'l' ? { visible: false } : { type: 'data', array: g.e, visible: true, thickness: 1, width: 0, color: col },
+        showlegend: false, cliponaxis: true });
+      refs.push(g.refs);
+    });
+    var disc = O.disc, win = S.meta.window || {}, near = null;
+    var X_ = function (t) { return LC.x === 'rel' ? t - disc : t; };
+    var ticksOn = LC.ticks && S.visits;
+    if (ticksOn) {
+      near = O.near || (O.near = X.nearbyVisits(O.i));
+      var byBand = {};
+      near.forEach(function (v) { (byBand[v.band] = byBand[v.band] || []).push(v); });
+      Object.keys(byBand).sort(function (a, b) { return K.FAMILIES.indexOf(U.bandFamily(a)) - K.FAMILIES.indexOf(U.bandFamily(b)); }).forEach(function (b) {
+        var vs = byBand[b], col = U.famColor(U.bandFamily(b));
+        traces.push({ type: 'scatter', mode: 'markers', xaxis: 'x', yaxis: 'y2', hoverinfo: 'none',
+          x: vs.map(function (v) { return X_(v.mjd); }), y: vs.map(function () { return 0.5; }),
+          marker: { symbol: 'line-ns-open', size: 13, color: col, line: { color: col, width: near.length > 400 ? 1.1 : 1.6 }, opacity: near.length > 400 ? 0.6 : 0.95 },
+          showlegend: false });
+        refs.push(vs.map(function (v) { return { visit: v }; }));
+      });
+    }
+    O.refs = refs;
+    var line = U.cssVar('--line'), strong = U.cssVar('--line-strong'), muted = U.cssVar('--muted'), ink = U.cssVar('--ink');
+    var shapes = [], ann = [];
+    if (U.isNum(win.mjd_start) && U.isNum(win.mjd_end)) {
+      shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: X_(win.mjd_start), x1: X_(win.mjd_end), y0: 0, y1: 1, fillcolor: U.cssVar('--plot-window'), line: { width: 0 }, layer: 'below' });
+      ann.push({ text: 'EDP2 window', xref: 'x', yref: 'paper', x: X_(win.mjd_start), y: 1, xanchor: 'left', yanchor: 'top', xshift: 6, yshift: -4,
+        showarrow: false, font: { size: 11, color: muted } });
+    }
+    if (U.isNum(disc)) {
+      shapes.push({ type: 'line', xref: 'x', yref: 'paper', x0: X_(disc), x1: X_(disc), y0: 0, y1: 1, line: { color: U.cssVar('--plot-disc'), width: 1, dash: 'dot' }, opacity: 0.7 });
+      ann.push({ text: 'TNS discovery', xref: 'x', yref: 'paper', x: X_(disc), y: 1, xanchor: 'center', yanchor: 'bottom', yshift: 2, showarrow: false, font: { size: 11, color: ink } });
+    }
+    if (ticksOn) ann.push({ text: 'LSSTCam pointing ≤' + K.TICK_RADIUS_DEG + '° (coverage not guaranteed)', xref: 'paper', yref: 'paper', x: 0, y: 0.072,
+      xanchor: 'left', yanchor: 'bottom', showarrow: false, font: { size: 10.5, color: muted } });
+    var yr = yRange(shown, LC.y);
+    var layout = {
+      margin: { l: 60, r: 12, t: 28, b: 44 }, paper_bgcolor: card, plot_bgcolor: card,
+      font: { family: 'Inter, ui-sans-serif, system-ui, sans-serif', size: 12, color: muted },
+      hovermode: 'closest', dragmode: 'zoom', showlegend: false, uirevision: O.name + '|' + LC.x + '|' + LC.y,
+      xaxis: { title: { text: LC.x === 'rel' ? 'Days since TNS discovery' : 'MJD', standoff: 10, font: { size: 12, color: muted } },
+        gridcolor: line, gridwidth: 1, zeroline: false, showline: false, ticks: '', anchor: ticksOn ? 'y2' : 'y', automargin: true,
+        exponentformat: 'none', separatethousands: false, tickformat: LC.x === 'rel' ? '' : 'd', tickfont: { color: muted } },
+      yaxis: { title: { text: LC.y === 'mag' ? 'AB magnitude' : 'Flux (nJy)', standoff: 8, font: { size: 12, color: muted } }, gridcolor: line, gridwidth: 1,
+        zeroline: LC.y === 'flux', zerolinecolor: strong, zerolinewidth: 1, showline: false, ticks: '', domain: ticksOn ? [0.11, 1] : [0, 1], automargin: true,
+        exponentformat: 'SI', tickfont: { color: muted } },
+      shapes: shapes, annotations: ann
+    };
+    if (yr) { layout.yaxis.range = yr.range; layout.yaxis.autorange = false; }
+    else if (LC.y === 'mag') layout.yaxis.autorange = 'reversed';
+    if (ticksOn) layout.yaxis2 = { domain: [0, 0.065], range: [0, 1], showticklabels: false, showgrid: false, zeroline: false, fixedrange: true, showline: false };
+    var config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+      toImageButtonOptions: { filename: 'lc_' + (V(O.i, 'prefix') || '') + O.name, scale: 2 } };
+    if (!O.pts.length && !traces.length) {
+      plotMessage('No photometry for this transient from any source in this build.' + (S.visitsState === 'loading' ? '' : ''));
+      renderFoot(near, 0);
+      return;
+    }
+    if (el.querySelector('.lc-msg')) el.innerHTML = '';
+    var first = !el._fullLayout;
+    window.Plotly.react(el, traces, layout, config);
+    if (first) {
+      el.on('plotly_hover', function (ev) {
+        var p = ev.points && ev.points[0];
+        if (!p || !O || !O.refs[p.curveNumber]) return;
+        var ref = O.refs[p.curveNumber][p.pointNumber];
+        if (ref) U.hover.show(ref.visit ? visitHtml(ref.visit) : pointHtml(ref), ev.event.clientX, ev.event.clientY);
+      });
+      el.on('plotly_unhover', function () { U.hover.hide(); });
+      el.on('plotly_relayout', function () { U.hover.hide(); });
+    }
+    renderFoot(near, yr ? yr.nAbove : 0);
+    var d = $('#pts'); if (d && d.open) renderPointsTable();
+  }
+
+  function fmtFlux(v) {
+    if (!U.isNum(v)) return '—';
+    var a = Math.abs(v);
+    return a >= 1e5 ? v.toExponential(3) : a >= 100 ? Math.round(v).toLocaleString('en-US') : v.toFixed(1);
+  }
+  function pointHtml(s) {
+    var p = s.p, dt = p.t - O.disc, col = U.famColor(p.fam), sym = O.sym[p.s] || 'circle';
+    if (s.lim) sym = K.LIMIT_SYMBOL; else if (p.k === 1 && !/-open$/.test(sym)) sym += '-open';
+    var h = '<div class="hc-t">' + U.symbolSvg(sym, col).replace('<svg', '<svg width="12" height="12"') + esc(U.srcShort(p.s)) + ' <span class="hc-m" style="font-weight:500">' + esc(p.b) + ' · ' + K.KIND_LABEL[p.k] + '</span></div>' +
+      '<div class="hc-r">MJD ' + p.t.toFixed(4) + ' <span class="hc-m">· ' + (dt >= 0 ? '+' : '−') + Math.abs(dt).toFixed(2) + ' d</span></div>';
+    if (s.lim) h += '<div class="hc-r">limit ' + U.fx(s.limMag, 2) + ' mag' + (LC.y === 'flux' ? ' <span class="hc-m">· ' + fmtFlux(s.y) + ' nJy</span>' : '') + '</div>';
+    else {
+      h += '<div class="hc-r">' + fmtFlux(p.f) + (U.isNum(p.e) ? ' ± ' + fmtFlux(p.e) : '') + ' nJy' + (U.isNum(p.e) && p.e > 0 ? ' <span class="hc-m">· S/N ' + (p.f / p.e).toFixed(1) + '</span>' : '') + '</div>';
+      if (s.mag != null) h += '<div class="hc-r">' + U.fx(s.mag, 3) + (s.magErr != null ? ' ± ' + U.fx(s.magErr, 3) : '') + ' mag</div>';
+    }
+    if (p.x) h += '<div class="hc-n">' + esc(String(p.x).slice(0, 160)) + '</div>';
+    return h;
+  }
+  function visitHtml(v) {
+    return '<div class="hc-t"><i class="sw" style="width:3px;height:12px;background:' + U.famColor(U.bandFamily(v.band)) + '"></i>LSSTCam pointing · ' + esc(v.band) + '</div>' +
+      '<div class="hc-r">MJD ' + v.mjd.toFixed(4) + ' <span class="hc-m">· ' + esc(U.isoDateTime(v.mjd)) + '</span></div>' +
+      '<div class="hc-m">Visit centre ' + v.sep.toFixed(2) + '° away · coverage not guaranteed</div>';
+  }
+  function renderFoot(near, nAbove) {
+    var el = $('#lc-foot');
+    if (!el || !O) return;
+    var left = [];
+    if (!O.pts.length) left.push('No photometry for this transient from any source in this build');
+    else left.push(U.fint(O.shown.length) + ' of ' + U.fint(O.pts.length) + ' points shown');
+    if (nAbove) left.push(nAbove + ' upper limit' + (nAbove > 1 ? 's' : '') + ' above the flux range (zoom out or use magnitudes)');
+    if (LC.y === 'mag') left.push('magnitudes for flux > 0 only' + (O.nLowSN ? ' (' + U.fint(O.nLowSN) + ' forced points with S/N < 3 hidden)' : ''));
+    var right = '';
+    if (LC.ticks) {
+      if (S.visitsState === 'ready' && near) {
+        var bands = {};
+        near.forEach(function (v) { bands[v.band] = (bands[v.band] || 0) + 1; });
+        right = '<span class="tick-legend"><span>' + U.plural(near.length, 'LSSTCam pointing') + ' ≤' + K.TICK_RADIUS_DEG + '° (coverage not guaranteed)</span>' +
+          Object.keys(bands).sort(function (a, b) { return K.FAMILIES.indexOf(U.bandFamily(a)) - K.FAMILIES.indexOf(U.bandFamily(b)); }).map(function (b) {
+            return '<span class="tk-item"><span class="tk" style="background:' + U.famColor(U.bandFamily(b)) + '"></span>' + esc(b) + ' ' + bands[b] + '</span>';
+          }).join('') + '</span>';
+      } else if (S.visitsState === 'error') right = 'LSSTCam pointings unavailable (data/visits.js did not load)';
+      else right = 'Loading LSSTCam pointings…';
+    }
+    el.innerHTML = '<span>' + left.join(' · ') + '</span><span>' + right + '</span>';
+  }
+
+  var LC_HEADER = ['source', 'band', 'band_family', 'mjd', 'days_since_disc', 'kind', 'flux_njy', 'flux_err_njy', 'mag_ab', 'mag_err', 'lim_mag', 'note'];
+  function lcRows() {
+    return O.shown.slice().sort(function (a, b) { return a.p.t - b.p.t; }).map(function (s) {
+      var p = s.p;
+      return [p.s, p.b, p.fam, p.t, +(p.t - O.disc).toFixed(5), K.KIND_LABEL[p.k], p.f, p.e,
+        s.mag != null ? +s.mag.toFixed(4) : null, s.magErr != null ? +s.magErr.toFixed(4) : null, s.limMag != null ? +s.limMag.toFixed(3) : null, p.x];
+    });
+  }
+  function downloadLc() { if (O) U.downloadCsv((V(O.i, 'prefix') || '') + O.name + '_lightcurve.csv', LC_HEADER, lcRows()); }
+  function renderPointsTable() {
+    var box = $('#pts-table');
+    if (!O || !box) return;
+    var rows = lcRows(), MAX = 3000;
+    var body = rows.slice(0, MAX).map(function (r) {
+      return '<tr><td>' + esc(U.srcShort(r[0])) + '</td><td>' + esc(r[1]) + '</td><td class="num">' + U.fx(r[3], 4) + '</td><td class="num">' + U.fx(r[4], 2) +
+        '</td><td>' + r[5] + '</td><td class="num">' + fmtFlux(r[6]) + '</td><td class="num">' + fmtFlux(r[7]) + '</td><td class="num">' +
+        (r[8] != null ? U.fx(r[8], 3) : '') + '</td><td class="num">' + (r[9] != null ? U.fx(r[9], 3) : '') + '</td><td class="num">' +
+        (r[10] != null ? U.fx(r[10], 2) : '') + '</td><td class="muted">' + esc(r[11] || '') + '</td></tr>';
+    }).join('');
+    box.innerHTML = '<div class="table-wrap"><table class="data"><thead><tr><th>Source</th><th>Band</th><th class="num">MJD</th><th class="num">Δt (d)</th>' +
+      '<th>Kind</th><th class="num">Flux (nJy)</th><th class="num">± (nJy)</th><th class="num">AB mag</th><th class="num">±</th><th class="num">Limit</th><th>Note</th></tr></thead>' +
+      '<tbody>' + (body || '<tr><td colspan="11"><div class="empty">No points shown.</div></td></tr>') + '</tbody></table></div>' +
+      (rows.length > MAX ? '<p class="muted" style="margin-top:8px">First ' + MAX + ' of ' + U.fint(rows.length) + ' rows; the CSV has all of them.</p>' : '');
+  }
+
+  X.onVisitsChanged = function () { if (S.view === 'object' && O) { O.near = null; updatePlot(); } };
+  X.views.object = {
+    show: function (name) { show(name); },
+    onTheme: function () { if (O) { renderControls(); updatePlot(); } },
+    onKey: function (e) {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === 'ArrowLeft' || e.key === '[') { if (rel(-1)) e.preventDefault(); }
+      else if (e.key === 'ArrowRight' || e.key === ']') { if (rel(1)) e.preventDefault(); }
+    }
+  };
+})();
