@@ -53,6 +53,14 @@ BOILERPLATE = {"diagnostic only (science_usable=false)",
                "independent public-data host pipeline, no TITAN code or products"}   # stated on every card
 FORBIDDEN = ("edp2", "good_edp2", "good-edp2", "dp2", "diaobject")                    # never in a public host value
 OUT_COLS = ["name", *COLS, "host_img"]
+# Pipeline redshift-source tags -> the wording shown on the site.
+ZSRC_LABEL = {
+    "TNS-reported (ge3dp)": "TNS redshift (3+ decimals)",
+    "TNS-reported (le2dp_likely_sn_template)": "TNS redshift, 2 decimals (likely an SN-template fit)",
+    "TNS-reported (no_z)": "no TNS redshift",
+    "LS DR10 z_spec": "Legacy Surveys DR10 spectroscopic",
+    "LS DR10 photo-z median": "Legacy Surveys DR10 photo-z (median)",
+}
 
 
 def load(cat: pd.DataFrame) -> pd.DataFrame | None:
@@ -66,6 +74,7 @@ def load(cat: pd.DataFrame) -> pd.DataFrame | None:
     if missing:
         raise SystemExit(f"refusing: {p} lacks columns {sorted(missing)}")
     h = h.drop_duplicates("name")
+    h["host_z_source"] = h["host_z_source"].map(lambda s: ZSRC_LABEL.get(s, s) if isinstance(s, str) else s)
     return h[h["name"].isin(set(cat["name"]))].reset_index(drop=True)
 
 
