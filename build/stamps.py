@@ -58,6 +58,29 @@ def _dp2_bands(name: str) -> list[str]:
     return [b for b in BAND_PREF if (DP2_NPZ / f"{name}_{b}.npz").exists()][:3]
 
 
+def _centred(z, half: int = 100) -> np.ndarray | None:
+    """The cutout on a (2*half+1)^2 canvas with the target at the centre (NaN outside the data).
+
+    Cutouts clipped at a patch edge are not square; their target position comes from the WCS
+    (cx, cy saved by fetch_edp2_stamps.py). A clipped cutout without it cannot be placed: None."""
+    a = z["img"].astype(float)
+    if not np.isfinite(a).any():
+        return None
+    if "cx" in z.files and np.isfinite(z["cx"]) and np.isfinite(z["cy"]):
+        cx, cy = int(round(float(z["cx"]))), int(round(float(z["cy"])))
+    elif a.shape[0] == a.shape[1]:
+        cy, cx = (a.shape[0] - 1) // 2, (a.shape[1] - 1) // 2
+    else:
+        return None
+    out = np.full((2 * half + 1, 2 * half + 1), np.nan)
+    y0, x0 = half - cy, half - cx                   # canvas offset of cutout pixel (0, 0)
+    ys, xs = max(0, -y0), max(0, -x0)
+    ye, xe = min(a.shape[0], out.shape[0] - y0), min(a.shape[1], out.shape[1] - x0)
+    if ye > ys and xe > xs:
+        out[ys + y0:ye + y0, xs + x0:xe + x0] = a[ys:ye, xs:xe]
+    return out
+
+
 def _stretch(img: np.ndarray, sky: float, noise: float, top: float) -> np.ndarray:
     x = (img - sky) / max(top - sky, noise * 5, 1e-9)
     return np.arcsinh(np.clip(x, 0, None) * 10) / np.arcsinh(10)
@@ -66,13 +89,10 @@ def _stretch(img: np.ndarray, sky: float, noise: float, top: float) -> np.ndarra
 def render_dp2(name: str) -> bytes | None:
     """Colour (or single-band grey) WebP of the DP2 deep coadd around `name`; None if no cutouts."""
     from PIL import Image  # noqa: PLC0415
-    bands = _dp2_bands(name)
-    if not bands:
+    arrs = [c for c in (_centred(np.load(DP2_NPZ / f"{name}_{b}.npz")) for b in _dp2_bands(name)) if c is not None]
+    if not arrs:
         return None
-    arrs = [np.load(DP2_NPZ / f"{name}_{b}.npz")["img"].astype(float) for b in bands]
-    h = min(a.shape[0] for a in arrs)
-    w = min(a.shape[1] for a in arrs)
-    arrs = [a[:h, :w] for a in arrs]
+    h, w = arrs[0].shape
     chans = []
     for a in arrs:
         f = np.isfinite(a)
@@ -86,8 +106,10 @@ def render_dp2(name: str) -> bytes | None:
         chans.append(np.where(f, _stretch(a, sky, noise, top), 0.0))
     if len(chans) >= 3:              # bluest -> B, reddest -> R
         rgb = np.stack([chans[2], chans[1], chans[0]], -1)
+    elif len(chans) == 2:            # two usable bands: their mean for G
+        rgb = np.stack([chans[1], (chans[0] + chans[1]) / 2, chans[0]], -1)
     else:
-        rgb = np.stack([chans[-1]] * 3, -1)
+        rgb = np.stack([chans[0]] * 3, -1)
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8), mode="RGB")
     im = im.transpose(Image.FLIP_TOP_BOTTOM)   # FITS row 0 is the bottom (deep coadds: north up, east left)
     im = im.resize((DP2_PX, DP2_PX), Image.LANCZOS)
@@ -101,7 +123,7 @@ def dp2_images(names) -> dict[str, tuple[bytes, str]]:
     out = {}
     if not DP2_NPZ.exists():
         return out
-    cdir = DP2_WEBP / f"{DP2_PX}_q{DP2_Q}"            # a new size or quality re-renders
+    cdir = DP2_WEBP / f"v2_{DP2_PX}_q{DP2_Q}"         # a new renderer, size or quality re-renders
     cdir.mkdir(parents=True, exist_ok=True)
     for n in names:
         bands = _dp2_bands(n)
@@ -116,7 +138,7 @@ def dp2_images(names) -> dict[str, tuple[bytes, str]]:
             if b is None:
                 continue
             cache.write_bytes(b)
-        out[n] = (b, "".join(bands))
+        out[n] = (b, "".join(x for x in bands if _centred(np.load(DP2_NPZ / f"{n}_{x}.npz")) is not None))
     return out
 
 

@@ -688,9 +688,9 @@
   }
   function trackName(t) { return t.sv === 'ZTF' ? 'ZTF · ' + t.id : 'Rubin alerts · ' + t.id; }
   function clfCardHtml(i) {
-    if (!U.has('clf_n') || !(V(i, 'clf_n') > 0 || V(i, 'mdb_call'))) return '';
+    if (!U.has('clf_n') || !(V(i, 'clf_n') > 0 || U.isNum(V(i, 'mdb_psn')))) return '';
     return '<section class="card clf-card" aria-labelledby="clf-h"><div class="lc-head"><h2 id="clf-h">Classifications</h2><div class="lc-ctl" id="clf-ctl"></div></div>' +
-      '<p class="clf-lede">What each broker classifier, and the metaDEBASS meta-classifier, said as the detections came in. ' +
+      '<p class="clf-lede">What each broker classifier said as the detections came in, with the metaDEBASS meta-layer’s confidences and its trust in the brokers. ' +
       '<a href="#/classifiers">How often are they right?</a></p><div id="clf-body"><div class="sk" style="height:120px"></div></div></section>';
   }
   function loadClf(i) {
@@ -741,16 +741,22 @@
     head += '</tr>';
     var rows = '';
     if (t.mdb) {
+      // metaDEBASS is a meta-layer, not a classifier: calibrated confidences as bar heights, no class call.
       var ins = t.ins ? ' <span class="pill outline" title="This object was in metaDEBASS’s training or calibration set, so its scores are in-sample">trained on it</span>' : '';
-      rows += '<tr class="mdb"><th class="lab" scope="row"><b>metaDEBASS</b><small>fusion v11' + (t.sv === 'LSST' ? ' · SN vs not SN' : '') + '</small>' + ins + '</th>';
-      for (k = 0; k < n; k++) {
-        var sn = t.mdb.sn[k], ia = t.mdb.ia ? t.mdb.ia[k] : null;
-        if (!U.isNum(sn)) { rows += '<td class="c-none"></td>'; continue; }
-        var ot = 1 - sn, tip = 'metaDEBASS after ' + unit + ' ' + (k + 1) + ': ' + (U.isNum(ia) ? 'P(Ia) ' + ia.toFixed(2) + ' · P(other SN) ' + (sn - ia).toFixed(2) : 'P(SN-like) ' + sn.toFixed(2)) + ' · P(not SN) ' + ot.toFixed(2);
-        rows += '<td class="stack" data-tip="' + esc(tip) + '">' + (U.isNum(ia) ? '<i class="c-I" style="height:' + (100 * ia).toFixed(0) + '%"></i><i class="c-S" style="height:' + (100 * (sn - ia)).toFixed(0) + '%"></i>' :
-          '<i class="c-N" style="height:' + (100 * sn).toFixed(0) + '%"></i>') + '<i class="c-O" style="height:' + (100 * ot).toFixed(0) + '%"></i></td>';
-      }
-      rows += '</tr>';
+      var confRow = function (arr, label, sub, what) {
+        var r = '<tr class="mdb"><th class="lab" scope="row"><b>' + label + '</b><small>' + sub + '</small>' + (what === 'sn' ? ins : '') + '</th>';
+        for (var k1 = 0; k1 < n; k1++) {
+          var v1 = arr[k1];
+          if (!U.isNum(v1)) { r += '<td class="c-none"></td>'; continue; }
+          var ia1 = t.mdb.ia ? t.mdb.ia[k1] : null;
+          var tip1 = 'metaDEBASS after ' + unit + ' ' + (k1 + 1) + ': P(supernova) ' + t.mdb.sn[k1].toFixed(2) + (U.isNum(ia1) ? ' · P(SN Ia) ' + ia1.toFixed(2) : '') +
+            ' (calibrated confidences, not a class call)';
+          r += '<td class="conf" data-tip="' + esc(tip1) + '"><i style="height:' + Math.max(4, 100 * v1).toFixed(0) + '%"></i></td>';
+        }
+        return r + '</tr>';
+      };
+      rows += confRow(t.mdb.sn, 'metaDEBASS', 'P(supernova)', 'sn');
+      if (t.mdb.ia) rows += confRow(t.mdb.ia, 'metaDEBASS', 'P(SN Ia)', 'ia');
     }
     var keys = ((S.meta.classifiers || {}).experts || []).map(function (e) { return e.key; }).filter(function (k2) { return t.x[k2]; });
     Object.keys(t.x).forEach(function (k2) { if (keys.indexOf(k2) < 0) keys.push(k2); });
@@ -762,27 +768,36 @@
         if (!c) { rows += '<td class="c-none"></td>'; continue; }
         var lab = t.lab[key] || (key === 'fink_lsst/cats' && t.cats ? ({ 11: 'SN-like', 12: 'Fast', 13: 'Long', 21: 'Periodic', 22: 'Non-periodic' }[t.cats[k3]] || 'CATS') + (U.isNum(c[1]) ? ' ' + c[1].toFixed(2) : '') :
           key === 'fink_lsst/early_snia' ? 'P(Ia) ' + (U.isNum(c[1]) ? c[1].toFixed(2) : '') : 'P(SN) ' + (U.isNum(c[1]) ? c[1].toFixed(2) : ''));
-        rows += clfCell(c[0], callConf(key, c[0], c[1]), e.label + ' after ' + unit + ' ' + (k3 + 1) + ': ' + (K.CALL_LABEL[c[0]] || c[0]) + ' · ' + lab + (e.timing === 'latest' ? ' (object-level, from the full lightcurve)' : ''), e.timing === 'latest');
+        var qv = t.q && t.q[key] ? t.q[key][k3] : null;
+        rows += clfCell(c[0], callConf(key, c[0], c[1]), e.label + ' after ' + unit + ' ' + (k3 + 1) + ': ' + (K.CALL_LABEL[c[0]] || c[0]) + ' · ' + lab +
+          (e.timing === 'latest' ? ' (object-level, from the full lightcurve)' : '') + (U.isNum(qv) ? ' · metaDEBASS trust in this call ' + qv.toFixed(2) : ''), e.timing === 'latest');
       }
       rows += '</tr>';
     });
+    var hasQ = Object.keys(t.q || {}).length > 0;
     var latest = keys.map(function (key) {
       var e = expertInfo(key), arr = t.x[key], last = null, lk = -1;
       for (var k4 = arr.length - 1; k4 >= 0; k4--) if (arr[k4]) { last = arr[k4]; lk = k4; break; }
       if (!last) return '';
       var lab = t.lab[key] || (key === 'fink_lsst/cats' && t.cats ? ({ 11: 'SN-like', 12: 'Fast', 13: 'Long', 21: 'Periodic', 22: 'Non-periodic' }[t.cats[lk]] || '') + (U.isNum(last[1]) ? ' ' + last[1].toFixed(2) : '') :
         (key === 'fink_lsst/early_snia' ? 'P(Ia) ' : 'P(SN) ') + (U.isNum(last[1]) ? last[1].toFixed(2) : ''));
-      return '<tr><td>' + esc(e.label) + ' <span class="muted">' + esc(e.sub || '') + '</span></td><td><span class="callpill c-' + last[0] + '">' + esc(K.CALL_LABEL[last[0]] || last[0]) + '</span></td><td class="mono">' + esc(lab) + '</td><td class="num">' + (lk + 1) + '</td></tr>';
+      var ql = t.q && t.q[key] ? t.q[key][lk] : null;
+      return '<tr><td>' + esc(e.label) + ' <span class="muted">' + esc(e.sub || '') + '</span></td><td><span class="callpill c-' + last[0] + '">' + esc(K.CALL_LABEL[last[0]] || last[0]) + '</span></td><td class="mono">' + esc(lab) + '</td>' +
+        (hasQ ? '<td class="num">' + (U.isNum(ql) ? ql.toFixed(2) : '<span class="none">—</span>') + '</td>' : '') + '<td class="num">' + (lk + 1) + '</td></tr>';
     }).join('');
     var tru = V(CLF.i, 'type');
     body.innerHTML = '<div class="clf-scroll"><table class="clf-grid">' + head + rows + '</table></div>' +
-      '<div class="clf-legend"><span><i class="c-I"></i>SN Ia</span><span><i class="c-S"></i>SN, not Ia</span><span><i class="c-N"></i>SN (no subtype)</span><span><i class="c-O"></i>not SN</span><span><i class="c-n"></i>not Ia</span>' +
-      '<span class="muted">Stronger colour: more confident. Columns: ' + unit + ' number' + (t.b === 'det' ? ' (positive detections)' : ' (every Rubin alert, including negative differences)') + '.</span></div>' +
-      '<div class="table-wrap clf-latest"><table class="data"><thead><tr><th>Classifier</th><th>Latest call</th><th>Output</th><th class="num">At ' + unit + '</th></tr></thead><tbody>' + latest + '</tbody></table></div>' +
+      '<div class="clf-legend"><span class="lg-h">Broker calls</span><span><i class="c-I"></i>SN Ia</span><span><i class="c-S"></i>SN, not Ia</span><span><i class="c-N"></i>SN (no subtype)</span><span><i class="c-O"></i>not SN</span><span><i class="c-n"></i>not Ia</span>' +
+      '<span class="lg-h">metaDEBASS</span><span><i class="conf-key"></i>confidence, as bar height</span>' +
+      '<span class="muted">Broker cells: stronger colour, more confident. Columns: ' + unit + ' number' + (t.b === 'det' ? ' (positive detections)' : ' (every Rubin alert, including negative differences)') + '.</span></div>' +
+      '<div class="table-wrap clf-latest"><table class="data"><thead><tr><th>Classifier</th><th>Latest call</th><th>Output</th>' +
+        (hasQ ? '<th class="num" title="metaDEBASS’s calibrated trust that this call is right">metaDEBASS trust</th>' : '') + '<th class="num">At ' + unit + '</th></tr></thead><tbody>' + latest + '</tbody></table></div>' +
       '<p class="clf-foot">' + (tru ? 'TNS classification: <b>' + esc(tru) + '</b>. ' : 'No TNS classification yet. ') +
       (t.b === 'alert' ? 'metaDEBASS scores Rubin objects with at least one positive detection; every alert of this one is a negative difference, so only broker outputs are shown. ' : '') +
-      (t.sv === 'LSST' && t.mdb ? 'For Rubin alerts, metaDEBASS v11 separates supernova-like from other transients but has no Ia training labels yet, so it gives no Ia probability. ' : '') +
-      'Scores are research outputs, not classifications.</p>';
+      (t.mdb ? '<a href="https://github.com/trivialTZ/rubin_hackathon" target="_blank" rel="noopener noreferrer">metaDEBASS</a> is a meta-layer, not another classifier: it reports calibrated confidences for follow-up ranking and, where it has a trust model, how far to trust each broker’s call. ' +
+        'A P(SN Ia) of 0.4 means about four in ten objects scored like this are SNe Ia, not that this one is something else.' +
+        (t.sv === 'LSST' ? ' For Rubin alerts, v11 has no Ia training labels yet, so it gives P(supernova) only.' : '') + ' ' : '') +
+      'All scores are research outputs, not classifications.</p>';
     body.onmousemove = function (e) {
       var c = e.target.closest('[data-tip]');
       if (!c) { U.hover.hide(); return; }

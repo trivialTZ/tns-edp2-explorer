@@ -1,4 +1,4 @@
-/* TNS x EDP2 Explorer — Classifiers page: how often each broker classifier (and metaDEBASS) was right
+/* TNS x EDP2 Explorer — Classifiers page: how often each broker classifier was right
  * on the TNS-typed transients, after 3, 5 and 10 detections and at its latest output.
  * Data: catalog meta.classifiers (build/classifiers.py scorecard). */
 (function () {
@@ -47,7 +47,7 @@
     }).join('');
     root.innerHTML = '<div class="wrap"><article class="prose wide sc-page">' +
       '<p class="eyebrow">Classifiers</p><h1 tabindex="-1">How often are the classifiers right?</h1>' +
-      '<p class="lede">For the transients here that TNS has classified from a spectrum, we asked every broker classifier, and the metaDEBASS meta-classifier, two questions: ' +
+      '<p class="lede">For the transients here that TNS has classified from a spectrum, we asked every broker classifier two questions: ' +
       'is it a supernova, and is it a Type Ia? We checked the answers after the 3rd, 5th and 10th detection and at each classifier’s latest output.</p>' +
       '<div class="sc-legend"><span><i style="--acc:0.95"></i>mostly right</span><span><i style="--acc:0.6"></i>often wrong</span><span class="muted">Cells show the share right, right/total, and the baseline: the score of always giving the majority answer (the typed objects here are nearly all supernovae, so on the first question the baseline is often close to 100%). Hover for the 95% interval. Faded: fewer than 5 objects.</span></div>' +
       secs +
@@ -56,8 +56,9 @@
       '<li><strong>A “yes”</strong> is a supernova call (or an SN Ia call) at probability 0.5 or more, or a supernova top class for classifiers that report a class. ' +
       'Fink CATS counts as “supernova” only for its SN-like class; its Long class also holds superluminous supernovae and tidal disruption events.</li>' +
       '<li><strong>Detections</strong> are positive detections counted the way metaDEBASS counts them, up to 20. Rubin objects whose alerts are all negative differences appear on their pages but are not scored.</li>' +
-      '<li><strong>metaDEBASS</strong> is scored only on objects outside its training and calibration sets (' + U.fint(M.n_in_sample || 0) + ' objects excluded). ' +
-      'For Rubin alerts its v11 build has no Ia training labels, so it answers only the supernova question. Its v11 inputs read Fink CATS Periodic as a non-Ia supernova and Long as not a supernova, a known input-mapping issue.</li>' +
+      '<li><strong>metaDEBASS is not graded here.</strong> It is a meta-layer, not another classifier: for each object it reports calibrated confidences for follow-up ranking (P(supernova), and P(SN Ia) for ZTF) and, where it has a trust model, how far to trust each broker’s call. ' +
+      'Object pages show both. Its own benchmark, on objects it never trained on, is in the <a href="https://github.com/trivialTZ/rubin_hackathon" target="_blank" rel="noopener noreferrer">metaDEBASS repository</a>: on live Rubin alerts it separates supernovae from other transients well, and its Ia-versus-other separation is not yet better than chance. ' +
+      'Its v11 inputs read Fink CATS Periodic as a non-Ia supernova and Long as not a supernova, a known input-mapping issue.</li>' +
       '<li><strong>Latest-only</strong> ALeRCE lightcurve classifiers are object-level snapshots computed from the full lightcurve, so they are scored only at “latest”.</li>' +
       '<li>Brokers may have trained on some of these transients; this page cannot check that.</li>' +
       '<li>Every object page shows the full sequence of calls. The per-detection table is in <a href="#/data">classifiers.csv.gz</a>.</li></ul>' +

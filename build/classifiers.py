@@ -15,8 +15,14 @@ Outputs (cache/norm/, read by assemble.py):
   classifier_objects.parquet one row per object id: name, survey, object_id, n_det_max, in_sample
   classifier_scorecard.json  how often each classifier was right on the TNS-typed objects
 
-Calls (one letter): I = SN Ia, S = SN other than Ia, N = SN (subtype not given),
-O = not a supernova, n = not Ia (EarlySNIa below threshold).
+Calls (one letter, broker classifiers only): I = SN Ia, S = SN other than Ia, N = SN (subtype not
+given), O = not a supernova, n = not Ia (EarlySNIa below threshold).
+
+metaDEBASS is a meta-layer, not a classifier: its rows (clf = "mdb") carry no call, only its
+calibrated confidences P(supernova) (conf) and, for ZTF, P(SN Ia) (p_ia). Its other output, trust
+in a broker's call at that detection, is the `trust` column of that broker's rows (only where a
+trust model exists; in the v11 run, the ALeRCE ZTF stamp classifiers). It is not graded in the
+scorecard; its benchmark lives in the metaDEBASS repository.
 
 Usage:
   python build/classifiers.py [--eval DIR]
@@ -44,6 +50,12 @@ CARD = C.NORM / "classifier_scorecard.json"
 MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v11.json", C.HACK / "data/gold/split_fusion_v11.local.json",
               C.HACK / "data/gold/split_fusion_v11_scc.json"]
 CHECKPOINTS = [3, 5, 10]
+# metaDEBASS trust columns in the predictions -> the broker they rate
+TRUST = {"q__alerce__stamp_classifier": "alerce/stamp_classifier",
+         "q__alerce__stamp_classifier_2025_beta": "alerce/stamp_classifier_2025_beta",
+         "q__alerce__stamp_classifier_rubin_beta": "alerce/stamp_classifier_rubin_beta",
+         "q__fink_lsst__snn": "fink_lsst/snn", "q__fink_lsst__cats": "fink_lsst/cats",
+         "q__fink_lsst__early_snia": "fink_lsst/early_snia", "q__lasair__sherlock": "lasair/sherlock"}
 JD_MJD = 2400000.5
 
 # Fink LSST CATS broad classes (ELAsTiCC taxonomy prefixes: 111-115 SN, 121-124 fast, 131-135 long,
@@ -55,8 +67,8 @@ SN_CLASSES = {"SNIa", "SNIbc", "SNII", "SLSN", "SESN", "SNIIn", "SNIIb", "SN"}
 # ia (Ia or not). timing: alert (per detection), static (fixed from the first detection or host
 # context), latest (object-level snapshot from the full lightcurve: shown, never scored early).
 EXPERTS = [
-    {"key": "mdb", "label": "metaDEBASS", "sub": "fusion v11 meta-classifier", "surveys": ["LSST", "ZTF"], "kind": "ternary", "timing": "alert",
-     "ref": "https://github.com/trivialTZ/tns-edp2-explorer#classifiers"},
+    {"key": "mdb", "label": "metaDEBASS", "sub": "meta-layer, fusion v11", "surveys": ["LSST", "ZTF"], "kind": "meta", "timing": "alert",
+     "ref": "https://github.com/trivialTZ/rubin_hackathon"},
     {"key": "fink_lsst/snn", "label": "Fink SuperNNova", "sub": "SN vs other", "surveys": ["LSST"], "kind": "sn", "timing": "alert",
      "ref": "https://doi.org/10.1093/mnras/stz3312"},
     {"key": "fink_lsst/cats", "label": "Fink CATS", "sub": "broad class", "surveys": ["LSST"], "kind": "sn", "timing": "alert",
@@ -137,7 +149,9 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
     g["object_id"] = g["object_id"].astype(str)
     pr = pd.read_parquet(pred_p)
     pr["object_id"] = pr["object_id"].astype(str)
-    g = g.merge(pr[["object_id", "n_det", "p_snia", "p_nonia", "p_other"]], on=["object_id", "n_det"], how="left")
+    qcols = [c for c in TRUST if c in pr.columns and pr[c].notna().any()]
+    g = g.merge(pr[["object_id", "n_det", "p_snia", "p_nonia", "p_other", *qcols]], on=["object_id", "n_det"], how="left")
+    trust_of = {TRUST[c]: c for c in qcols}
     stat = static_labels(pd.read_parquet(silv_p).assign(object_id=lambda d: d["object_id"].astype(str))) if silv_p.exists() else {}
     col = lambda k, f: f"proj__{k.replace('/', '__')}__{f}"  # noqa: E731
     rows, objs = [], []
@@ -149,16 +163,11 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
         for d in og.to_dict("records"):
             base = {"name": name, "survey": sv, "object_id": oid, "n_det": int(d["n_det"]),
                     "mjd": round(float(d["alert_jd"]) - JD_MJD, 5) if pd.notna(d["alert_jd"]) else math.nan}
-            # metaDEBASS
+            # metaDEBASS: confidences only, no call (v11 has no LSST Ia head, so no P(Ia) for Rubin IDs)
             pi, pn, po = _f(d.get("p_snia")), _f(d.get("p_nonia")), _f(d.get("p_other"))
             if np.isfinite([pi, pn, po]).all():
-                if sv == "ZTF":
-                    call = "I" if pi >= max(pn, po) else "S" if pn >= po else "O"
-                    lab = f"Ia {pi:.2f} · other SN {pn:.2f} · not SN {po:.2f}"
-                else:                          # v11 has no LSST Ia/non-Ia head: SN vs other only
-                    call = "N" if pi + pn >= 0.5 else "O"
-                    lab = f"SN-like {pi + pn:.2f} · not SN {po:.2f}"
-                rows.append({**base, "clf": "mdb", "call": call, "conf": round(pi + pn, 4),
+                lab = f"P(SN) {pi + pn:.2f}" + (f" · P(Ia) {pi:.2f}" if sv == "ZTF" else "")
+                rows.append({**base, "clf": "mdb", "call": None, "conf": round(pi + pn, 4),
                              "p_ia": round(pi, 4) if sv == "ZTF" else math.nan, "label": lab})
             if sv == "LSST":
                 s = _f(d.get(col("fink_lsst/snn", "raw_snn_sn_vs_others")))
@@ -175,7 +184,9 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
             for key in [e["key"] for e in EXPERTS if e["timing"] in ("static", "latest") and sv in e["surveys"]]:
                 if (oid, key) in stat and (BY_KEY[key]["timing"] == "static" or int(d["n_det"]) == nmax):
                     c, p, lab = stat[(oid, key)]
-                    rows.append({**base, "clf": key, "call": c, "conf": round(p, 4) if np.isfinite(p) else math.nan, "label": lab})
+                    q = _f(d.get(trust_of[key])) if key in trust_of else math.nan
+                    rows.append({**base, "clf": key, "call": c, "conf": round(p, 4) if np.isfinite(p) else math.nan, "label": lab,
+                                 "trust": round(q, 4) if np.isfinite(q) else math.nan})
         objs.append({"name": name, "survey": sv, "object_id": oid, "n_det_max": int(og["n_det"].max()),
                      "in_sample": oid in insample, "basis": "det"})
     n_gold = len(objs)
@@ -254,7 +265,7 @@ def scorecard(df: pd.DataFrame, objs: pd.DataFrame, truth: dict[str, str]) -> di
             continue
         res = {}
         for e in EXPERTS:
-            if sv not in e["surveys"]:
+            if sv not in e["surveys"] or e["kind"] == "meta":      # metaDEBASS is not graded as a classifier
                 continue
             x = s[s["clf"] == e["key"]]
             if e["key"] == "mdb":
@@ -306,7 +317,7 @@ def main():
         r, o = rows_for_survey(sv, names, insample)
         rows += r
         objs += o
-    df = pd.DataFrame(rows, columns=["name", "survey", "object_id", "n_det", "mjd", "clf", "call", "conf", "p_ia", "label"])
+    df = pd.DataFrame(rows, columns=["name", "survey", "object_id", "n_det", "mjd", "clf", "call", "conf", "p_ia", "trust", "label"])
     ob = pd.DataFrame(objs, columns=["name", "survey", "object_id", "n_det_max", "in_sample", "basis"])
     import assemble as A  # noqa: PLC0415
     cat = A.build_catalog("public")

@@ -313,7 +313,7 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
           f"{len(sources)} sources (encrypting; nothing is written in plaintext)")
     shards = shard_payloads(ph, cat)
     dp2 = ST.dp2_images(e.loc[e["edp2_stamp"].notna(), "name"])
-    e["edp2_stamp"] = e["edp2_stamp"].where(e["name"].isin(set(dp2)))
+    e["edp2_stamp"] = e["name"].map({n: bands for n, (_, bands) in dp2.items()})   # usable bands only
     payload["rows"] = table_rows(e, cols)
     shard_of = cat.set_index("name")["shard"]
     for n, (b, _) in dp2.items():
@@ -359,9 +359,11 @@ def classifier_shards(cat: pd.DataFrame) -> tuple[dict[int, dict], pd.DataFrame 
 
     A track is one survey object ID (a ZTF oid or a Rubin alert diaObjectId) with, per detection number n
     (index n-1): t = MJD; x = {classifier: [call, conf] or null}; cats = CATS class code; mdb = metaDEBASS
-    {sn, ot[, ia]} probabilities; lab = {classifier: label} for fixed (static / latest) outputs.
+    confidences {sn: P(supernova)[, ia: P(SN Ia), ZTF only]} (no call: it is a meta-layer); q = {classifier:
+    metaDEBASS trust in that classifier's call} where a trust model exists; lab = {classifier: label} for
+    fixed (static / latest) outputs.
     """
-    for c in ("mdb_call", "mdb_psn", "mdb_pia", "mdb_ndet", "mdb_sv", "mdb_ins", "clf_n"):
+    for c in ("mdb_psn", "mdb_pia", "mdb_ndet", "mdb_sv", "mdb_ins", "clf_n"):
         cat[c] = None
     if not (CLF_NORM.exists() and CLF_OBJ.exists() and CLF_CARD.exists()):
         return {}, None, None
@@ -382,15 +384,14 @@ def classifier_shards(cat: pd.DataFrame) -> tuple[dict[int, dict], pd.DataFrame 
         for k, m in zip(g["n_det"], g["mjd"]):
             if 1 <= k <= n and t[k - 1] is None and np.isfinite(m):
                 t[k - 1] = round(float(m), 4)
-        tr = {"id": r.object_id, "sv": r.survey, "b": r.basis, "ins": bool(r.in_sample), "t": t, "x": {}, "lab": {}}
+        tr = {"id": r.object_id, "sv": r.survey, "b": r.basis, "ins": bool(r.in_sample), "t": t, "x": {}, "lab": {}, "q": {}}
         for clf, gg in g.groupby("clf", sort=False):
             if clf == "mdb":
-                m = {"sn": [None] * n, "ot": [None] * n}
+                m = {"sn": [None] * n}
                 if r.survey == "ZTF":
                     m["ia"] = [None] * n
-                for k, conf, pia, lab in zip(gg["n_det"], gg["conf"], gg["p_ia"], gg["label"]):
+                for k, conf, pia in zip(gg["n_det"], gg["conf"], gg["p_ia"]):
                     m["sn"][k - 1] = round(float(conf), 3)
-                    m["ot"][k - 1] = round(1 - float(conf), 3)
                     if "ia" in m and np.isfinite(pia):
                         m["ia"][k - 1] = round(float(pia), 3)
                 tr["mdb"] = m
@@ -399,6 +400,11 @@ def classifier_shards(cat: pd.DataFrame) -> tuple[dict[int, dict], pd.DataFrame 
             for k, call, conf in zip(gg["n_det"], gg["call"], gg["conf"]):
                 arr[k - 1] = [call, None if not np.isfinite(conf) else round(float(conf), 3)]
             tr["x"][clf] = arr
+            if "trust" in gg and gg["trust"].notna().any():
+                qa = [None] * n
+                for k, q in zip(gg["n_det"], gg["trust"]):
+                    qa[k - 1] = None if not np.isfinite(q) else round(float(q), 3)
+                tr["q"][clf] = qa
             if timing.get(clf) in ("static", "latest"):
                 tr["lab"][clf] = str(gg["label"].iloc[-1])
             if clf == "fink_lsst/cats":
@@ -417,15 +423,13 @@ def classifier_shards(cat: pd.DataFrame) -> tuple[dict[int, dict], pd.DataFrame 
             continue
         L = last.loc[r.object_id]
         pia = float(L["p_ia"]) if np.isfinite(L["p_ia"]) else None
-        psn = float(L["conf"])
-        call = ("Ia" if L["call"] == "I" else "SN" if L["call"] in ("S", "N") else "other")
-        summ[r.name] = (call, round(psn, 3), None if pia is None else round(pia, 3), int(L["n_det"]), r.survey, bool(r.in_sample))
-    for j, c in enumerate(("mdb_call", "mdb_psn", "mdb_pia", "mdb_ndet", "mdb_sv", "mdb_ins")):
+        summ[r.name] = (round(float(L["conf"]), 3), None if pia is None else round(pia, 3), int(L["n_det"]), r.survey, bool(r.in_sample))
+    for j, c in enumerate(("mdb_psn", "mdb_pia", "mdb_ndet", "mdb_sv", "mdb_ins")):
         cat[c] = cat["name"].map({k: v[j] for k, v in summ.items()})
     cat["clf_n"] = cat["name"].map(d[d["clf"] != "mdb"].groupby("name")["clf"].nunique()).fillna(0).astype(int)
     dl = d.rename(columns={"clf": "classifier", "conf": "score"})[
-        ["name", "survey", "object_id", "n_det", "mjd", "classifier", "call", "score", "p_ia", "label"]]
-    dl = dl.assign(call=dl["call"].map({"I": "SN Ia", "S": "SN (not Ia)", "N": "SN", "O": "not SN", "n": "not Ia"}))
+        ["name", "survey", "object_id", "n_det", "mjd", "classifier", "call", "score", "p_ia", "trust", "label"]]
+    dl = dl.assign(call=dl["call"].map({"I": "SN Ia", "S": "SN (not Ia)", "N": "SN", "O": "not SN", "n": "not Ia"}).fillna(""))
     return out, dl, card
 
 
@@ -433,8 +437,11 @@ CLF_DL_DESC = {
     "name": "TNS name without prefix", "survey": "LSST (Rubin alert stream) or ZTF", "object_id": "survey object ID (ZTF oid or Rubin alert diaObjectId; read as string)",
     "n_det": "detection number (positive detections, metaDEBASS count; for Rubin IDs metaDEBASS did not score, the alert number)",
     "mjd": "MJD of that detection", "classifier": "classifier key (mdb = metaDEBASS fusion v11)",
-    "call": "what the classifier says at this detection: SN Ia, SN (not Ia), SN (subtype not given), not SN, not Ia",
-    "score": "the classifier's own score for its call (metaDEBASS: P(SN-like))", "p_ia": "metaDEBASS P(SN Ia), ZTF only",
+    "call": "what a broker classifier says at this detection: SN Ia, SN (not Ia), SN (subtype not given), not SN, not Ia; "
+            "empty for metaDEBASS, a meta-layer that makes no call",
+    "score": "the classifier's own score for its call; for metaDEBASS its calibrated P(supernova)",
+    "p_ia": "metaDEBASS calibrated P(SN Ia), ZTF only (v11 has no Ia model for Rubin alerts)",
+    "trust": "metaDEBASS trust that this broker's call is right at this detection, where a trust model exists",
     "label": "native output, e.g. CATS class and score, stamp top class, Sherlock context",
 }
 
@@ -674,7 +681,7 @@ def main():
             d2.mkdir(parents=True)
             for n, (b, _) in dp2.items():
                 (d2 / f"{n}.webp").write_bytes(b)
-        cat["edp2_stamp"] = cat["edp2_stamp"].where(cat["name"].isin(set(dp2)))
+        cat["edp2_stamp"] = cat["name"].map({n: bands for n, (_, bands) in dp2.items()})
         meta["stamps"]["dp2"] = len(dp2)
         catalog["rows"] = table_rows(cat, cols)
     dl = write_downloads(data, cat, ph, meta, sources,
@@ -697,7 +704,7 @@ def main():
         for sh, objs in clf.items():
             size += write_js(data / "clf" / f"{sh:03d}.js", f"TNSX.onClf({sh},", objs)
         print(f"[{a.mode}] classifiers: {sum(len(v) for v in clf.values())} objects in {len(clf)} files; "
-              f"metaDEBASS summary for {int(cat['mdb_call'].notna().sum())}")
+              f"metaDEBASS summary for {int(cat['mdb_psn'].notna().sum())}")
     if (data / "spec").exists():
         shutil.rmtree(data / "spec")
     if spec:

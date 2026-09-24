@@ -52,7 +52,7 @@
     KNOWN_COLS: ['name', 'prefix', 'ra', 'dec', 'type', 'z', 'group', 'disc_mjd', 'disc_mag', 'disc_filter', 'internal',
       'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'n_spec_plot', 'region', 'debass',
       'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc', 'edp2_coadd', 'edp2_coadd_bands', 'edp2_stamp',
-      'lead_alert', 'rubin_first', 'stamp', 'mdb_call', 'mdb_psn', 'mdb_pia', 'mdb_ndet', 'mdb_sv', 'mdb_ins', 'clf_n'],
+      'lead_alert', 'rubin_first', 'stamp', 'mdb_psn', 'mdb_pia', 'mdb_ndet', 'mdb_sv', 'mdb_ins', 'clf_n'],
     // Classifier calls (build/classifiers.py): I Ia, S SN other than Ia, N SN (subtype not given), O not SN, n not Ia.
     CALL_LABEL: { I: 'SN Ia', S: 'SN, not Ia', N: 'SN', O: 'not SN', n: 'not Ia' },
     RF_LABEL: { rubin: 'Discovered in Rubin data', earlier: 'Rubin alert before TNS discovery', later: 'Rubin alert after TNS discovery',

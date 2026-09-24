@@ -21,8 +21,8 @@
     if (U.has('region')) c.push({ id: 'region', label: 'Region', sub: 'WFD / DDF', on: true, title: 'DDF: covered by visits aimed at an LSST Deep Drilling Field; WFD: everything else' });
     if (U.has('debass')) c.push({ id: 'debass', label: 'DEBASS', on: true, title: 'DEBASS follow-up status (sheet “Following?” = FINISHED or YES)' });
     if (U.has('n_spec')) c.push({ id: 'n_spec', label: 'Spectra', num: true, on: true });
-    if (U.has('mdb_call')) c.push({ id: 'mdb_call', label: 'metaDEBASS', sub: 'latest call', on: true,
-      title: 'Latest metaDEBASS fusion v11 call and its P(SN-like) (research output, not a classification)' });
+    if (U.has('mdb_psn')) c.push({ id: 'mdb_psn', label: 'metaDEBASS', sub: 'P(SN) · P(Ia)', num: true, on: true,
+      title: 'metaDEBASS calibrated confidences at its latest scored detection: P(supernova), and P(SN Ia) for ZTF-scored objects. A meta-layer output, not a classification' });
     if (U.has('lead_alert')) c.push({ id: 'lead_alert', label: 'Rubin lead', sub: 'alerts, days', num: true, on: true,
       title: 'TNS discovery − first positive Rubin alert detection (> 0: Rubin saw it first). “Rubin”: the TNS discovery was made in Rubin data' });
     S.srcKeys.forEach(function (s) { c.push({ id: 'n_' + s, label: U.srcShort(s), sub: 'measurements', num: true, src: s, on: true, title: U.srcLabel(s) }); });
@@ -103,7 +103,7 @@
     h += facetShell('pre', cat.pre.label, catBody(cat.pre), true);
     h += facetShell('src', cat.src.label, catBody(cat.src), true);
     ['reg', 'debass', 'rid'].forEach(function (id) { if (cat[id]) h += facetShell(id, cat[id].label, catBody(cat[id]), cat[id].open); });
-    ['mdb', 'clf'].forEach(function (id) { if (cat[id]) h += facetShell(id, cat[id].label, catBody(cat[id]), false); });
+    if (cat.clf) h += facetShell('clf', cat.clf.label, catBody(cat.clf) + (num.mpsn ? '<div style="height:14px"></div>' + numWidget(num.mpsn, true) + '<div style="height:14px"></div>' + numWidget(num.mpia, true) : ''), false);
     if (cat.rf) h += facetShell('rf', cat.rf.label, catBody(cat.rf) + (num.alead ? '<div style="height:14px"></div>' + numWidget(num.alead, true) : ''), false);
     var pts = F.num.filter(function (d) { return d.group === 'pts'; });
     if (pts.length) {
@@ -147,7 +147,8 @@
     var o = [['', 'Automatic'], ['_npts', 'Most data'], ['disc_mjd', 'Discovery date'], ['name', 'Name'], ['type', 'Type'], ['z', 'Redshift'], ['disc_mag', 'Discovery mag'], ['group', 'Reporting group']];
     if (U.has('n_spec')) o.push(['n_spec', 'Spectra']);
     if (U.has('lead_alert')) o.push(['lead_alert', 'Rubin alert lead time']);
-    if (U.has('mdb_psn')) o.push(['mdb_psn', 'metaDEBASS P(SN-like)']);
+    if (U.has('mdb_psn')) o.push(['mdb_psn', 'metaDEBASS P(supernova)']);
+    if (U.has('mdb_pia')) o.push(['mdb_pia', 'metaDEBASS P(SN Ia)']);
     S.srcKeys.forEach(function (k) { o.push(['n_' + k, U.srcShort(k) + ' measurements']); });
     S.srcKeys.forEach(function (k) { if (U.has('t0_' + k)) o.push(['t0_' + k, U.srcShort(k) + ' first point']); });
     if (U.has('n_visits_active')) o.push(['n_visits_active', 'Active pointings']);
@@ -484,10 +485,9 @@
       case 'debass': v = V(i, 'debass');
         return '<td>' + (v ? '<span class="pill debass">' + esc(K.DEBASS_LABEL[v] || v) + '</span>' : '<span class="none">—</span>') + '</td>';
       case 'n_spec': v = V(i, 'n_spec'); return '<td class="num"' + (V(i, 'spec_types') ? ' title="' + esc(V(i, 'spec_types')) + '"' : '') + '>' + (v > 0 ? U.fint(v) : '<span class="zero">0</span>') + '</td>';
-      case 'mdb_call': v = V(i, 'mdb_call');
-        if (!v) return '<td><span class="none">—</span></td>';
-        return '<td><span class="callpill c-' + (v === 'Ia' ? 'I' : v === 'SN' ? (V(i, 'mdb_sv') === 'ZTF' ? 'S' : 'N') : 'O') + '">' + esc(v === 'other' ? 'not SN' : v) + '</span>' +
-          (U.isNum(V(i, 'mdb_psn')) ? ' <span class="muted tabular">' + U.fx(V(i, 'mdb_psn'), 2) + '</span>' : '') + '</td>';
+      case 'mdb_psn': v = V(i, 'mdb_psn');
+        if (!U.isNum(v)) return '<td class="num"><span class="none">—</span></td>';
+        return '<td class="num tabular">' + U.fx(v, 2) + (U.isNum(V(i, 'mdb_pia')) ? ' <span class="muted">· ' + U.fx(V(i, 'mdb_pia'), 2) + '</span>' : '') + '</td>';
       case 'lead_alert': v = V(i, 'lead_alert');
         if (V(i, 'rubin_first') === 'rubin') return '<td class="num"><span class="pill rubin" title="TNS discovery made in Rubin data">Rubin</span></td>';
         return '<td class="num">' + (U.isNum(v) ? '<span class="' + (v > 0 ? 'lead-pos' : 'muted') + '">' + (v > 0 ? '+' : '') + U.fx(v, 1) + '</span>' : '<span class="none">—</span>') + '</td>';

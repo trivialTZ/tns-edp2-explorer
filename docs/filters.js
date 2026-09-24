@@ -108,12 +108,9 @@
         note: 'First positive Rubin alert detection (Fink LSST) against the TNS discovery date. “Discovered in Rubin data”: reported by Rubin, under an LSST internal name, or at the first Rubin alert itself. The public alert stream starts ' +
           (S.meta.lead && U.isNum(S.meta.lead.alert_start_mjd) ? U.isoDate(S.meta.lead.alert_start_mjd) : 'late October 2025') + '.' });
     }
-    // broker classifications and metaDEBASS (build/classifiers.py): latest call of the scored track
-    if (C.mdb_call !== undefined) {
-      var jmc = C.mdb_call, jcn = C.clf_n;
-      addCat({ id: 'mdb', label: 'metaDEBASS says', open: false, get: function (i) { return rows[i][jmc] || '__none__'; },
-        values: [{ v: 'Ia', label: 'SN Ia' }, { v: 'SN', label: 'Supernova' }, { v: 'other', label: 'Not a supernova' }, { v: '__none__', label: 'Not scored' }],
-        note: 'Latest metaDEBASS fusion v11 call. For Rubin alerts it separates supernovae from other transients only.' });
+    // broker classifications (build/classifiers.py)
+    if (C.clf_n !== undefined) {
+      var jcn = C.clf_n;
       addCat({ id: 'clf', label: 'Broker classifications', open: false, get: function (i) { return rows[i][jcn] > 0 ? 'yes' : 'no'; },
         values: [{ v: 'yes', label: 'Has broker classifier output' }, { v: 'no', label: 'None' }] });
     }
@@ -184,6 +181,13 @@
     if (C.host_logm_p50 !== undefined) {
       addNum({ id: 'hlogm', label: 'Host log M*', get: colGetter('host_logm_p50'), edges: linEdges(6, 12, 24), type: 'float', fmt: fmtNum(2), open: false,
         note: 'Bagpipes median, fits that passed QC only. Diagnostic, not for science use.' });
+    }
+    // metaDEBASS confidences at its latest scored detection (a meta-layer: no class call)
+    if (C.mdb_psn !== undefined) {
+      addNum({ id: 'mpsn', label: 'metaDEBASS P(supernova)', get: colGetter('mdb_psn'), edges: linEdges(0, 1, 20), type: 'float', fmt: fmtNum(2), open: false,
+        note: 'Calibrated confidence at the latest scored detection. Objects metaDEBASS did not score have no value.' });
+      addNum({ id: 'mpia', label: 'metaDEBASS P(SN Ia)', get: colGetter('mdb_pia'), edges: linEdges(0, 1, 20), type: 'float', fmt: fmtNum(2), open: false,
+        note: 'ZTF-scored objects only: v11 has no Ia model for Rubin alerts yet. A value of 0.4 means about 4 in 10 such objects are SNe Ia.' });
     }
     if (C.lead_alert !== undefined) {
       addNum({ id: 'alead', label: 'Rubin alert lead time', get: colGetter('lead_alert'), edges: linEdges(-60, 60, 24), type: 'float', fmt: fmtNum(1), unit: ' d', open: false,

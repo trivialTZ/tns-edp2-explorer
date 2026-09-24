@@ -114,8 +114,12 @@ when n counts positive detections (metaDEBASS scored the ID) or `alert` when it 
 {"id": str, "sv": "LSST"|"ZTF", "b": "det"|"alert", "ins": bool (in metaDEBASS training/calibration),
  "t": [mjd or null], "x": {classifier: [[call, score] or null, ...]}, "lab": {classifier: label},
  "cats": [CATS class code or null],          // Fink CATS: 11 SN-like, 12 Fast, 13 Long, 21 Periodic, 22 Non-periodic
- "mdb": {"sn": [P(SN-like)], "ot": [P(not SN)], "ia": [P(Ia)]}}   // metaDEBASS fusion v11; "ia" for ZTF only
+ "mdb": {"sn": [P(supernova)], "ia": [P(SN Ia)]},   // metaDEBASS fusion v11 confidences; "ia" for ZTF only
+ "q": {classifier: [metaDEBASS trust in that call or null]}}   // only where a trust model exists
 ```
+
+metaDEBASS is a meta-layer, not a classifier: it has no call here, only calibrated confidences (used
+for follow-up ranking) and trust in broker calls. It is not graded in the scorecard.
 
 Calls: `I` SN Ia, `S` SN other than Ia, `N` SN (subtype not given), `O` not a supernova, `n` not Ia
 (EarlySNIa below 0.5). `lab` holds the label of classifiers whose output is fixed (stamp classifiers,
@@ -178,7 +182,7 @@ merges it into catalogue columns at load (null where an object has none).
 | rubin_first | `rubin` (TNS discovery made in Rubin data: Rubin group, an LSST internal name, or discovery within 0.01 d of the first positive Rubin alert), `earlier` / `later` (first positive Rubin alert detection more than 0.01 d before / after TNS discovery), `none` (discovered while the public alert stream ran, no positive alert detection), `pre` (discovered before the alert stream) |
 | lead_alert | TNS discovery MJD − first positive Rubin alert detection MJD, days (> 0: Rubin earlier); null for `pre` |
 | stamp | `band|mjd|snr|neg` of the Rubin alert whose cutouts are in `data/stamps/<name>.webp` (highest-S/N positive detection, else the strongest negative one, `neg` = 1), null if none |
-| mdb_call, mdb_psn, mdb_pia, mdb_ndet, mdb_sv, mdb_ins | latest metaDEBASS fusion v11 call (`Ia`, `SN`, `other`), P(SN-like), P(Ia) (ZTF only), detection number, survey of the scored ID, and whether that ID was in metaDEBASS training/calibration; null if not scored |
+| mdb_psn, mdb_pia, mdb_ndet, mdb_sv, mdb_ins | metaDEBASS fusion v11 calibrated P(supernova) and P(SN Ia) (ZTF only) at its latest scored detection, that detection number, the survey of the scored ID, and whether that ID was in metaDEBASS training/calibration; null if not scored. No class call: metaDEBASS is a meta-layer |
 | clf_n | number of broker classifiers with output for any of the object's IDs |
 | shard | lightcurve shard index |
 

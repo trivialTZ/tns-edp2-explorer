@@ -13,11 +13,12 @@ FASTDB's processing version.
 
 ## What each page has
 
-- **Explore**: faceted filters (type, region, DEBASS, sources, Rubin first?, metaDEBASS call and more), a table or sky view, all in the URL.
+- **Explore**: faceted filters (type, region, DEBASS, sources, Rubin first?, metaDEBASS confidence and more), a table or sky view, all in the URL.
 - **Object pages**: TNS record, lightcurve, sky images (Legacy Surveys / Pan-STARRS1 / DSS2) and Rubin
-  alert cutouts, broker classifications and metaDEBASS scores per detection, and public TNS spectra.
-- **Classifiers**: how often each broker classifier and metaDEBASS was right on the TNS-typed objects
-  after 3, 5 and 10 detections (`build/classifiers.py`).
+  alert cutouts, broker classifications per detection with metaDEBASS confidences (P(supernova), P(SN Ia)
+  for ZTF) and its trust in broker calls where it has a trust model, and public TNS spectra.
+- **Classifiers**: how often each broker classifier was right on the TNS-typed objects after 3, 5 and
+  10 detections (`build/classifiers.py`). metaDEBASS is a meta-layer, not a classifier, so it is not graded.
 - **Data**: `docs/data/download/` (catalogue, all public photometry, classifier outputs, MANIFEST.json),
   a Python example, and how to cite. `CITATION.cff` and `.zenodo.json` describe the repository for GitHub's
   "Cite this repository" and for Zenodo.

@@ -14,7 +14,9 @@ Inputs:
 
 Outputs (PRIVATE only):
   PRIVATE/cache/edp2_coadd_dids.parquet        lsst_tract, lsst_patch, lsst_band, obs_publisher_did
-  PRIVATE/cache/edp2_stamps/<name>_<band>.npz  float32 pixels (NaN kept) of the image plane
+  PRIVATE/cache/edp2_stamps/<name>_<band>.npz  img: float32 pixels (NaN kept) of the image plane;
+                                               cx, cy: the target's 0-based pixel position (from the WCS),
+                                               needed when the cutout is clipped at a patch edge
   PRIVATE/cache/edp2_stamps/_failures.json
 
 Token from load_rsp_token(); never printed. Cutout URLs are not logged.
@@ -23,6 +25,7 @@ Usage:
   python build/fetch_edp2_stamps.py                   DP2-matched objects (typed first)
   python build/fetch_edp2_stamps.py --scope coadd     every object inside the coadd footprint
   python build/fetch_edp2_stamps.py --limit 20
+  python build/fetch_edp2_stamps.py --fix-clipped     refetch clipped cutouts saved without cx, cy
 """
 from __future__ import annotations
 
@@ -130,14 +133,24 @@ def _retry_after(h: str | None) -> float:
             return 30.0
 
 
-def image_plane(fits_bytes: bytes) -> np.ndarray | None:
+def image_plane(fits_bytes: bytes, ra: float, dec: float) -> tuple[np.ndarray | None, float, float]:
+    """The first 2-D image plane and the target's 0-based pixel position in it (NaN if no WCS)."""
+    import warnings  # noqa: PLC0415
     from astropy.io import fits  # noqa: PLC0415
+    from astropy.wcs import WCS  # noqa: PLC0415
     with fits.open(BytesIO(fits_bytes)) as hdul:
         for h in hdul:
             d = getattr(h, "data", None)
             if d is not None and getattr(d, "ndim", 0) == 2 and d.size:
-                return np.asarray(d, dtype=np.float32)
-    return None
+                cx = cy = float("nan")
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        cx, cy = (float(v) for v in WCS(h.header).world_to_pixel_values(ra, dec))
+                except Exception:  # noqa: BLE001
+                    pass
+                return np.asarray(d, dtype=np.float32), cx, cy
+    return None, float("nan"), float("nan")
 
 
 def fetch_one(job: tuple, token: str) -> tuple[str, str, str | None]:
@@ -166,15 +179,26 @@ def fetch_one(job: tuple, token: str) -> tuple[str, str, str | None]:
                 time.sleep(15 * (attempt + 1))
                 continue
             break
-        img = image_plane(r.content)
+        img, cx, cy = image_plane(r.content, ra, dec)
         if img is None:
             return name, band, "no 2D image plane"
-        np.savez_compressed(dst, img=img)
+        tmp = dst.with_name(dst.stem + ".part.npz")
+        np.savez_compressed(tmp, img=img, cx=np.float32(cx), cy=np.float32(cy))
+        tmp.replace(dst)                  # atomic: an interrupted run never leaves half a file
         return name, band, None
     return name, band, err or "failed"
 
 
-def jobs_for(scope: str, limit: int | None, token: str, tap_sync) -> list[tuple]:
+def needs_fix(path: Path) -> bool:
+    """A cached cutout that is clipped (not square) and has no target position, or cannot be read."""
+    try:
+        z = np.load(path)
+        return z["img"].shape[0] != z["img"].shape[1] and "cx" not in z.files
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def jobs_for(scope: str, limit: int | None, token: str, tap_sync, fix: bool = False) -> list[tuple]:
     cov = pd.read_parquet(COADD)
     t = C.load_targets()[["name", "ra", "dec", "edp2_matched"]]
     df = t.merge(cov, on="name")
@@ -196,7 +220,8 @@ def jobs_for(scope: str, limit: int | None, token: str, tap_sync) -> list[tuple]
     for r in df.itertuples():
         bands = [b for b in BAND_PREF if (r.lsst_tract, r.lsst_patch, b) in by][:3]
         for b in bands:
-            if not (STAMPS / f"{r.name}_{b}.npz").exists():
+            f = STAMPS / f"{r.name}_{b}.npz"
+            if (needs_fix(f) if fix else not f.exists()) and (f.exists() or not fix):
                 jobs.append((r.name, b, by[(r.lsst_tract, r.lsst_patch, b)], float(r.ra), float(r.dec)))
     log(f"{len(df):,} objects ({scope}); {len(jobs):,} cutouts to fetch")
     return jobs
@@ -206,11 +231,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--scope", choices=["matched", "coadd"], default="matched")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--fix-clipped", action="store_true", help="refetch clipped cutouts saved without a target position")
     a = ap.parse_args()
     _guard_private()
     STAMPS.mkdir(parents=True, exist_ok=True)
     token, tap_sync = _tap()          # never printed
-    jobs = jobs_for(a.scope, a.limit, token, tap_sync)
+    jobs = jobs_for(a.scope, a.limit, token, tap_sync, fix=a.fix_clipped)
     fails = json.loads(FAIL.read_text()) if FAIL.exists() else {}
     n_ok = 0
     with ThreadPoolExecutor(WORKERS) as ex:

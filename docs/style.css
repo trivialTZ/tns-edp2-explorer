@@ -752,6 +752,12 @@ table.clf-grid { border-collapse: separate; border-spacing: 3px; font-size: 12px
 .c-N > i, i.c-N, .clf-legend i.c-N, .callpill.c-N { background: var(--clf-snx); }
 .c-O > i, i.c-O, .clf-legend i.c-O, .callpill.c-O { background: var(--clf-oth); }
 .c-n > i, i.c-n, .clf-legend i.c-n, .callpill.c-n { background: var(--clf-nia); }
+.clf-grid td.conf { background: var(--fill); }
+.clf-grid td.conf > i { top: auto; left: 30%; right: 30%; height: 50%; background: var(--ink); border-radius: 2px 2px 0 0; }
+.clf-grid tr.mdb td.conf { height: 30px; }
+.clf-legend i.conf-key { width: 12px; background: linear-gradient(to right, var(--fill) 30%, var(--ink) 30%, var(--ink) 70%, var(--fill) 70%); }
+.clf-legend .lg-h { font-weight: 600; color: var(--ink); }
+.clf-legend .lg-h:not(:first-child) { margin-left: 8px; }
 .clf-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0 16px; font-size: 12.5px; color: var(--ink-2); align-items: center; }
 .clf-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .clf-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
