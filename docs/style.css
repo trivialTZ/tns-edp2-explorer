@@ -1,6 +1,7 @@
 /* TNS x EDP2 Explorer — design system.
-   Cool Rubin greys (rubinobservatory.org neutrals) with Rubin Observatory teal (rubinobservatory.org palette) as the main
-   colour: primary actions, active navigation, key numbers, links, focus and the sky map.
+   Cool Rubin greys (rubinobservatory.org neutrals), Windsor-style Fraunces headings over Inter text, and
+   Rubin Observatory teal as the main colour: primary actions, active navigation, key numbers, links, focus
+   and the sky map.
    Band colours are reserved for data; the brand teal is never drawn inside a lightcurve plot. */
 
 :root {
@@ -35,7 +36,7 @@
   --dot-none: #C2C8CC;
 
   --font: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --serif: "Newsreader", "Source Serif 4", ui-serif, Georgia, "Times New Roman", serif;
+  --display: "Fraunces", "Windsor", "Cooper Std", ui-serif, Georgia, serif;   /* Windsor-style soft old-style, headings only */
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* type scale: 12 / 14 / 16 / 20 / 28 / 48 (display clamps up to 64) */
@@ -90,6 +91,10 @@ button { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
 h1, h2, h3, h4, p { margin: 0; }
 .num, td.num, .tabular { font-variant-numeric: tabular-nums; }
+.team-head h2, .section-head h2, .hero h1, .feat h3, .results-head h1, .empty h3, .obj-title h1,
+.host-head h2, .lc-head h2, .prose h1, .prose h2 {
+  font-optical-sizing: none; font-variation-settings: "opsz" 36, "SOFT" 100, "WONK" 1;   /* Windsor-like: low contrast, soft */
+}
 .mono { font-family: var(--mono); font-size: 0.93em; letter-spacing: -0.01em; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -143,7 +148,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .team-dlg { position: fixed; z-index: 80; left: 50%; top: 14vh; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 28vh); overflow: auto; padding: 24px; box-shadow: var(--shadow-lg); animation: pop 180ms var(--ease); }
 .team-head { display: flex; align-items: center; gap: 10px; }
 .team-head svg { width: 20px; height: 20px; color: var(--muted); flex: none; }
-.team-head h2 { font: 400 26px/1.15 var(--serif); letter-spacing: -0.02em; }
+.team-head h2 { font: 600 26px/1.15 var(--display); letter-spacing: -0.02em; }
 .team-text { margin: 12px 0 20px; color: var(--ink-2); line-height: 1.55; }
 .team-lbl { display: block; margin-bottom: 6px; color: var(--muted); font-size: var(--t-xs); font-weight: 500; }
 .team-dlg .input { height: 40px; font-size: 15px; }
@@ -170,7 +175,7 @@ main:focus { outline: none; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); min-width: 0; }
 .section { margin-top: 64px; }
 .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 20px; }
-.section-head h2 { font: 500 var(--t-xl)/1.15 var(--serif); letter-spacing: -0.015em; }
+.section-head h2 { font: 600 var(--t-xl)/1.15 var(--display); letter-spacing: -0.015em; }
 .section-head p { color: var(--muted); max-width: 64ch; }
 .eyebrow { font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 
@@ -259,9 +264,9 @@ html[data-route="home"] #boot-generic { display: none; }
 
 /* ------------------------------------------------------------------ home */
 .hero { padding: 88px 0 24px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 32px 64px; align-items: end; }
-.hero h1 { font: 400 clamp(40px, 5.2vw, 68px)/1.02 var(--serif); letter-spacing: -0.03em; text-wrap: balance; }
+.hero h1 { font: 650 clamp(40px, 5.2vw, 68px)/1.02 var(--display); letter-spacing: -0.03em; text-wrap: balance; }
 .hero h1 em { font-style: italic; }
-.hero .lede { font: 400 var(--t-lg)/1.5 var(--serif); color: var(--ink-2); max-width: 44ch; text-wrap: pretty; }
+.hero .lede { font: 400 var(--t-lg)/1.55 var(--font); color: var(--ink-2); max-width: 44ch; text-wrap: pretty; }
 .hero-search { grid-column: 1 / -1; margin-top: 24px; max-width: 760px; }
 .hero-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .spot { position: relative; }
@@ -331,7 +336,7 @@ html[data-route="home"] #boot-generic { display: none; }
 .feat { display: flex; flex-direction: column; gap: 10px; padding: 20px; color: var(--ink); transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease); }
 .feat:hover { text-decoration: none; transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow-lg); }
 .feat .row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.feat h3 { font: 500 26px/1.1 var(--serif); letter-spacing: -0.02em; }
+.feat h3 { font: 600 26px/1.1 var(--display); letter-spacing: -0.02em; }
 .feat .meta { color: var(--muted); font-size: 13px; }
 .feat .spark { height: 64px; width: 100%; }
 .feat .spark .sk { height: 100%; }
@@ -389,7 +394,7 @@ html[data-route="home"] #boot-generic { display: none; }
 .pos-grid label { color: var(--muted); font-size: 13px; }
 
 .results-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
-.results-head h1 { font: 400 var(--t-2xl)/1 var(--serif); letter-spacing: -0.03em; }
+.results-head h1 { font: 650 var(--t-2xl)/1 var(--display); letter-spacing: -0.03em; }
 .rcount { color: var(--muted); font-size: var(--t-md); margin-top: 10px; font-variant-numeric: tabular-nums; }
 .rcount b { color: var(--ink); font-weight: 600; }
 .rtools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -431,7 +436,7 @@ td .rng { display: block; font-size: 11px; color: var(--muted); margin-top: 1px;
 td .typ { color: var(--ink-2); }
 td .none { color: var(--faint); }
 .empty { padding: 64px 24px; text-align: center; color: var(--muted); }
-.empty h3 { font: 400 var(--t-lg) var(--serif); color: var(--ink); margin-bottom: 6px; }
+.empty h3 { font: 600 var(--t-lg) var(--display); color: var(--ink); margin-bottom: 6px; }
 .pager { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .pager .pg { display: flex; gap: 6px; align-items: center; }
 .pager .select { width: auto; height: 30px; border-radius: var(--r-pill); font-size: 13px; }
@@ -455,7 +460,7 @@ td .none { color: var(--faint); }
 .prevnext .pos { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; margin-right: 4px; }
 .obj-hero { padding: 32px 0 8px; }
 .obj-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; }
-.obj-title h1 { font: 400 clamp(44px, 6vw, 76px)/0.95 var(--serif); letter-spacing: -0.035em; }
+.obj-title h1 { font: 650 clamp(44px, 6vw, 76px)/0.95 var(--display); letter-spacing: -0.035em; }
 .obj-title h1 .pfx { font: 500 0.36em/1 var(--font); letter-spacing: 0.02em; color: var(--muted); vertical-align: 0.9em; margin-right: 0.35em; }
 .obj-title .tags { display: flex; gap: 8px; align-items: center; transform: translateY(-8px); }
 .coords { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; }
@@ -484,7 +489,7 @@ td .none { color: var(--faint); }
 /* host galaxy card (diagnostic products; object.js hostCardHtml) */
 .host-card { margin-top: 40px; padding: 24px; }
 .host-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.host-head h2 { font: 400 var(--t-xl)/1 var(--serif); letter-spacing: -0.02em; margin-right: 4px; }
+.host-head h2 { font: 600 var(--t-xl)/1 var(--display); letter-spacing: -0.02em; margin-right: 4px; }
 .host-body { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 24px 32px; margin-top: 20px; align-items: start; }
 .host-fig { margin: 0; }
 .host-fig img, .host-noimg { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--r-md); background: #000; }
@@ -502,7 +507,7 @@ table.host-post thead th { position: static; box-shadow: none; }
 
 .lc-card { margin-top: 40px; padding: 24px 24px 12px; }
 .lc-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
-.lc-head h2 { font: 400 var(--t-xl)/1 var(--serif); letter-spacing: -0.02em; }
+.lc-head h2 { font: 600 var(--t-xl)/1 var(--display); letter-spacing: -0.02em; }
 .lc-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .lc-legend { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 20px; }
 .lc-legend .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -529,9 +534,9 @@ table.host-post thead th { position: static; box-shadow: none; }
 /* ------------------------------------------------------------------ about (editorial) */
 .prose { max-width: 68ch; margin: 0 auto; padding: 72px 0 0; font-size: var(--t-md); line-height: 1.7; color: var(--ink-2); }
 .prose .eyebrow { margin-bottom: 16px; }
-.prose h1 { font: 400 clamp(40px, 5vw, 60px)/1.05 var(--serif); letter-spacing: -0.03em; color: var(--ink); margin-bottom: 24px; text-wrap: balance; }
-.prose .lede { font: 400 22px/1.5 var(--serif); color: var(--ink-2); margin-bottom: 8px; }
-.prose h2 { font: 400 var(--t-xl)/1.2 var(--serif); letter-spacing: -0.02em; color: var(--ink); margin: 56px 0 16px; }
+.prose h1 { font: 650 clamp(40px, 5vw, 60px)/1.05 var(--display); letter-spacing: -0.03em; color: var(--ink); margin-bottom: 24px; text-wrap: balance; }
+.prose .lede { font: 400 20px/1.55 var(--font); color: var(--ink-2); margin-bottom: 8px; }
+.prose h2 { font: 600 var(--t-xl)/1.2 var(--display); letter-spacing: -0.02em; color: var(--ink); margin: 56px 0 16px; }
 .prose h3 { font-size: var(--t-md); font-weight: 600; color: var(--ink); margin: 28px 0 8px; }
 .prose p { margin: 0 0 16px; }
 .prose ul { margin: 0 0 16px; padding-left: 22px; }
