@@ -223,9 +223,10 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
                 secret_ids: set[str], rotate: bool = False, state_file: Path | None = None) -> tuple[int, dict]:
     """Encrypt `catalog` and one blob per shard 0..n_shards-1 into data_dir/edp2/.
 
-    Files are staged in a scratch directory under cache/, self-checked, then moved into
-    place; on any failure nothing new is left under data_dir/edp2 and the state file is
-    untouched. Returns (bytes written, plan info).
+    Files are staged in a scratch directory under cache/, self-checked, then swapped in.
+    On any failure the previous layer is put back unchanged (so the key is not lost and
+    the next build does not rotate) and the state file is untouched. Returns
+    (bytes written, plan info).
     """
     final = data_dir / CP.ENC_DIR
     state_file = state_file or state_path(data_dir.parent)
@@ -237,6 +238,7 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
     files, new_state, info = _plan(final, password, plain, _load_state(state_file), rotate)
     C.CACHE.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="edp2_layer_", dir=C.CACHE))
+    backup, moved_in = None, False
     try:
         size = 0
         for fn, txt in files.items():
@@ -244,17 +246,22 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
             size += len(txt)
         self_check(tmp, password, catalog, shards, n_shards, secret_ids)
         if final.exists():
-            shutil.rmtree(final)
+            backup = Path(tempfile.mkdtemp(prefix="edp2_layer_prev_", dir=C.CACHE)) / "edp2"
+            shutil.move(str(final), str(backup))
         shutil.move(str(tmp), str(final))
+        moved_in = True
         final.chmod(0o755)                       # mkdtemp creates 0700
-    except BaseException:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise
-    try:
         site_scan(data_dir.parent, password, secret_ids)
     except BaseException:
-        shutil.rmtree(final, ignore_errors=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+        if moved_in:
+            shutil.rmtree(final, ignore_errors=True)       # never leave a layer that failed its checks
+        if backup is not None and backup.exists():
+            shutil.move(str(backup), str(final))           # put the previous layer back unchanged
         raise
+    finally:
+        if backup is not None:
+            shutil.rmtree(backup.parent, ignore_errors=True)
     _save_state(state_file, new_state)
     # Stability: an immediate rebuild from the same inputs must leave every file byte-identical
     # (a zero diff under data/edp2/), so a no-change refresh commits nothing here.

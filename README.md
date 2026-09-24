@@ -119,6 +119,43 @@ contract is in [SCHEMA.md](SCHEMA.md). After cloning, run
 same check in GitHub Actions, copy `ci/check-public.yml` to
 `.github/workflows/`; pushing it needs a token with the `workflow` scope.
 
+## Host galaxies (diagnostic)
+
+Object pages can show a host-galaxy card: the host-selection figure, the
+association (catalogue and ID, separation, d_DLR, tier, redshift) and Bagpipes
+posteriors (median and 16–84%) for log M*, log SFR, log sSFR, mass-weighted age
+and A_V. Explore gets host facets and columns. The products come from an
+independent public-data host pipeline in `rubin_hackathon`
+(`common.HOSTS_DIR` = `reports/tns_edp2_hosts/site/`: `hosts.parquet`,
+`img/<name>.png`). `assemble.py` reads them on every run, so one re-assemble
+(or `refresh.sh`) picks up new rows, figures and fits. The pipeline is
+diagnostic only: association weights are uncalibrated and the fits depend on
+the model. It uses no TITAN code or products.
+
+The products hold no DP2 value, but one of the two target lists, the
+good-EDP2 list, is selected with proprietary DP2 detections. So
+(`build/hosts.py`):
+
+- **Public:** only rows on the SN Ia list (spectroscopic SNe Ia with a TNS
+  redshift, selected from public TNS data) that this site also shows as
+  TNS-typed SN Ia. They form a sparse `hosts` table in `data/catalog.js`, with
+  figures in `data/hosts/<name>.webp` (400 px WebP). `assemble.py` asserts that
+  every public row is on the SN Ia list. `check_public.py` rejects host rows for
+  objects not typed SN Ia here, figures without a public row, and any
+  list-membership or DP2 field.
+- **Encrypted only:** every other row (the good-EDP2-only objects) goes into
+  the encrypted catalogue, and its figure is embedded as a 256 px WebP data URI
+  in the encrypted lightcurve shard. So those cards appear only with team access.
+- **Never published:** `in_good_edp2_list`, in any form.
+- **Held back while the host run is going:** the pipeline fitted sub-lists at
+  different times, so partial fit progress correlates with good-EDP2
+  membership. While any public row's fit is still pending, every public fit
+  shows as pending (no posteriors). The real values travel only in the
+  encrypted layer, and the gate lifts on the first rebuild after the run ends.
+
+`build/test_hosts.py` (venv) tests the split and the withholding, and
+`build/test_check_public.py` tests the guards.
+
 ## Using the site
 
 Search (top bar, home page, Explore name box) takes TNS names, internal names,

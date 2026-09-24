@@ -87,6 +87,24 @@
       values: Array.from(gc.entries()).sort(function (a, b) { return b[1] - a[1] || a[0].localeCompare(b[0]); })
         .map(function (g) { return { v: g[0], label: g[0] || '(none)' }; }),
       get: function (i) { return String(rows[i][jg] == null ? '' : rows[i][jg]); } });
+    // host galaxies (diagnostic): categorical facets over whatever host rows this view holds
+    if (C.host_status !== undefined) {
+      var HS_LABEL = { associated: 'Associated', ambiguous: 'Ambiguous', 'no-host': 'No host found', failed: 'Not searched', __none__: 'Not in the host sample' };
+      var HF_LABEL = { qc_pass: 'Fit passed QC', qc_fail: 'Withheld (QC fail)', pending: 'Fit pending', not_attempted_ambiguous: 'Not fitted: ambiguous host',
+        not_attempted_no_host: 'Not fitted: no host', not_attempted_no_catalog_coverage: 'Not fitted: no catalogue coverage',
+        not_attempted_implausible_tns_z: 'Not fitted: implausible TNS z', no_host_redshift: 'Not fitted: no redshift',
+        photometry_or_handoff_failed: 'Not fitted: photometry failed', __none__: 'Not in the host sample' };
+      var hostFacet = function (id, label, col, labels) {
+        var j = C[col], cnt = new Map();
+        var get = function (i) { var v = rows[i][j]; return v == null || v === '' ? '__none__' : String(v); };
+        for (var i3 = 0; i3 < S.N; i3++) { var k3 = get(i3); cnt.set(k3, (cnt.get(k3) || 0) + 1); }
+        var vals = Array.from(cnt.keys()).sort(function (a, b) { return (a === '__none__') - (b === '__none__') || cnt.get(b) - cnt.get(a); });
+        addCat({ id: id, label: label, open: false, group: 'host', get: get,
+          values: vals.map(function (v) { return { v: v, label: labels[v] || v.replace(/_/g, ' ') }; }) });
+      };
+      hostFacet('hst', 'Host status', 'host_status', HS_LABEL);
+      if (C.host_fit !== undefined) hostFacet('hfit', 'Host fit status', 'host_fit', HF_LABEL);
+    }
     if (S.isPrivate) {
       addCat({ id: 'em', label: 'EDP2 match', private: true, open: true,
         values: [{ v: '1', label: 'Matched (≤ ' + S.matchR + '″)' }, { v: '0', label: 'Not matched' }],
@@ -113,6 +131,15 @@
       addNum({ id: 'n_' + s, label: U.srcShort(s) + ' measurements', short: U.srcShort(s), src: s, get: function (i) { return gs(i) || 0; },
         edges: countEdges(mx), type: 'int', fmt: fmtNum(0), group: 'pts' });
     });
+    if (C.host_z !== undefined) {
+      var ghz = colGetter('host_z'), hzq = quantiles(colValues(ghz), [0.98]);
+      addNum({ id: 'hz', label: 'Host redshift', get: ghz, edges: linEdges(0, Math.max(0.05, hzq[0] || 0.2), 24), type: 'float', fmt: fmtNum(3), open: false,
+        note: 'The redshift held fixed in the host fit (spectroscopic or photometric).' });
+    }
+    if (C.host_logm_p50 !== undefined) {
+      addNum({ id: 'hlogm', label: 'Host log M*', get: colGetter('host_logm_p50'), edges: linEdges(6, 12, 24), type: 'float', fmt: fmtNum(2), open: false,
+        note: 'Bagpipes median, fits that passed QC only. Diagnostic, not for science use.' });
+    }
     if (C.n_visits_active !== undefined) {
       var gv = colGetter('n_visits_active'), vmx = Math.max.apply(null, colValues(gv).concat([1]));
       addNum({ id: 'nva', label: 'LSSTCam pointings', get: function (i) { return gv(i) || 0; }, edges: countEdges(vmx), type: 'int', fmt: fmtNum(0), open: false,

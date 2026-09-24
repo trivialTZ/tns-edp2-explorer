@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 import common as C
+import hosts as H
 
 PUBLIC_NORM_FILES = ["ztf.parquet", "tns.parquet", "lsst_alert.parquet"]
 EDP2_NORM = C.PRIVATE_NORM / "edp2.parquet"
@@ -218,11 +219,14 @@ def shard_payloads(ph: pd.DataFrame, cat: pd.DataFrame) -> dict[int, dict]:
     return out
 
 
-def edp2_layer(cat: pd.DataFrame) -> tuple[dict, dict[int, dict], set[str]]:
+def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict], set[str]]:
     """Plaintext of the encrypted team-access layer, aligned with the public catalogue.
 
     Returns (catalog payload, {shard: {name: {edp2_dia|edp2_fp: LC}}}, diaObjectIds for the
     leak scan). These objects are PROPRIETARY: they may only be handed to crypto_layer.
+    host_split = (public rows, encrypted-only rows, public images, fits_withheld) adds the
+    encrypted-only host rows (and, while public fits are withheld, the public rows' full
+    values) to the catalogue payload, and their figures as data URIs to the shards.
     """
     for f in (EDP2_NORM, EDP2_OBJECTS):
         if not f.exists():
@@ -251,7 +255,18 @@ def edp2_layer(cat: pd.DataFrame) -> tuple[dict, dict[int, dict], set[str]]:
     matched = int(e["edp2_id"].notna().sum())
     print(f"[edp2] {matched:,} objects with a DiaObject, {len(ph):,} points, "
           f"{len(sources)} sources (encrypting; nothing is written in plaintext)")
-    return payload, shard_payloads(ph, cat), ids
+    shards = shard_payloads(ph, cat)
+    if host_split is not None:
+        pub, priv, pub_imgs, withheld = host_split
+        uris = {n: u for n in priv["name"] if (u := H.data_uri(n, C.PRIVATE_CACHE / "hosts_webp"))}
+        rows = pd.concat([priv, pub]) if withheld else priv
+        payload["hosts"] = H.table(rows, {**{n: "shard" for n in uris}, **{n: "file" for n in pub_imgs}})
+        shard_of = cat.set_index("name")["shard"]
+        for n, u in uris.items():
+            shards[int(shard_of[n])].setdefault(H.SHARD_IMG_KEY, {})[n] = u
+        print(f"[edp2] hosts: {len(priv)} encrypted-only rows, {len(uris)} embedded figures"
+              + (f", plus the withheld fits of {len(pub)} public rows" if withheld else ""))
+    return payload, shards, ids
 
 
 def write_js(path: Path, call: str, payload) -> int:
@@ -320,10 +335,33 @@ def main():
     rows = table_rows(cat, cols)
 
     data = out / "data"
+    catalog = {"meta": meta, "cols": cols, "rows": rows}
+    # Host galaxies (diagnostic): public mode gets only SN Ia-list rows (hosts.py); the
+    # encrypted-only rows are added to the EDP2 layer below. Private mode gets every row.
+    host_split, host_dir, hosts = None, data / "hosts", H.load(cat)
+    if hosts is None:
+        if host_dir.exists():
+            shutil.rmtree(host_dir)
+        print(f"[{a.mode}] hosts: no {C.HOSTS_DIR / 'hosts.parquet'}; host card off")
+    else:
+        pub, priv, withheld = H.split(hosts, cat)
+        if a.mode == "public":
+            shown, cache = pub, C.CACHE / "hosts_webp"
+        else:
+            shown, cache, withheld = hosts, C.PRIVATE_CACHE / "hosts_webp", False
+        imgs = H.write_images(shown["name"], host_dir, cache)
+        t = H.table(shown, {n: "file" for n in imgs}, withheld=withheld)
+        if a.mode == "public":
+            H.public_guard(t)
+            host_split = (pub, priv, imgs, withheld)
+        catalog["hosts"] = t
+        meta["hosts"] = {"n_rows": len(shown), "n_images": len(imgs), "fits_withheld": withheld}
+        print(f"[{a.mode}] hosts: {len(shown)} rows, {len(imgs)} figures in {host_dir}"
+              + ("; fit results withheld until the host run completes" if withheld else ""))
     if (data / "lc").exists():
         shutil.rmtree(data / "lc")
     (data / "lc").mkdir(parents=True)
-    size = write_js(data / "catalog.js", "TNSX.onCatalog(", {"meta": meta, "cols": cols, "rows": rows})
+    size = write_js(data / "catalog.js", "TNSX.onCatalog(", catalog)
 
     v = pd.read_csv(C.VISITS_CSV, usecols=["expMidptMJD", "band", "ra", "dec"])
     vrows = [[round(t, 5), b, round(r, 4), round(d, 4)]
@@ -347,7 +385,7 @@ def main():
             shutil.rmtree(enc_dir)
             print(f"[public] removed {enc_dir} (no --encrypt-edp2)")
         return
-    plain, enc_shards, ids = edp2_layer(cat)
+    plain, enc_shards, ids = edp2_layer(cat, host_split)
     try:
         n, info = CL.write_layer(data, password, plain, enc_shards, n_lc, ids, rotate=a.rotate)
     except CL.LayerError as e:

@@ -122,6 +122,18 @@ class Layer(unittest.TestCase):
         info = self.build()
         self.assertEqual((info["key"], info["sealed"]), ("kept", 1))
 
+    def test_failed_site_scan_restores_the_previous_layer(self):
+        self.build()
+        before = self.files()
+        (self.site / "data" / "leak.txt").write_text("7" + "1" * 17)      # makes check_public fail
+        self.shards[1] = {"2025b": {"edp2_fp": LC(7)}}
+        with self.assertRaises(CL.LayerError), contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            CL.write_layer(self.site / "data", PW, self.catalog, self.shards, 3, set(), state_file=self.state)
+        self.assertEqual(self.files(), before)
+        (self.site / "data" / "leak.txt").unlink()
+        self.assertEqual(self.build()["key"], "kept")
+
     def test_state_is_private(self):
         self.build()
         self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)

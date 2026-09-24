@@ -3,6 +3,8 @@
 # The public site gets the EDP2 team-access layer as ciphertext only (docs/data/edp2/,
 # keyed by TNSX_SITE_PASSWORD). The key and unchanged files are kept while the password
 # is unchanged, so only changed files are committed; add --rotate for a new key.
+# Host-galaxy products (common.HOSTS_DIR) are read on every run: SN Ia-list hosts are
+# public (docs/data/hosts/), all other host rows go only into the encrypted layer.
 # The pre-commit hook re-runs check_public.py before anything is committed.
 set -e
 cd "$(dirname "$0")/.."

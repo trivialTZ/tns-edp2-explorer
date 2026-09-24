@@ -34,6 +34,7 @@ def keyinfo(iterations: int = 600000) -> str:
             f'"check":{{"iv":"{B(os.urandom(12))}","ct":"{B(os.urandom(38))}"}}}});\n')
 
 
+WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 " + bytes(24)
 PLAIN_LC = {"2025abc": {"edp2_dia": {"t": [60800.1], "b": ["r"], "f": [1234.5], "e": [50.0], "k": [0],
                                      "l": [None], "x": [""]}}}
 
@@ -44,9 +45,14 @@ class CheckPublic(unittest.TestCase):
         self.root = Path(self.tmp.name)
         data = self.root / "data"
         (data / "lc").mkdir(parents=True)
-        cat = {"meta": {"mode": "public", "sources": {"ztf": {}}, "team_access": True},
-               "cols": ["name", "n_ztf", "shard"], "rows": [["2025abc", 3, 0], ["2025abd", 0, 1]]}
-        (data / "catalog.js").write_text(f"TNSX.onCatalog({json.dumps(cat)});\n")
+        self.cat = {"meta": {"mode": "public", "sources": {"ztf": {}}, "team_access": True},
+                    "cols": ["name", "type", "n_ztf", "shard"],
+                    "rows": [["2025abc", "SN Ia", 3, 0], ["2025abd", None, 0, 1]],
+                    "hosts": {"cols": ["name", "host_status", "host_sep", "host_img"],
+                              "rows": [["2025abc", "associated", 1.2, "file"]]}}
+        self.write_cat()
+        (data / "hosts").mkdir()
+        (data / "hosts" / "2025abc.webp").write_bytes(WEBP)
         for sh in (0, 1):
             (data / "lc" / f"{sh:03d}.js").write_text(f"TNSX.onShard({sh},{{}});\n")
         self.enc = data / "edp2"
@@ -58,6 +64,9 @@ class CheckPublic(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def write_cat(self):
+        (self.root / "data" / "catalog.js").write_text(f"TNSX.onCatalog({json.dumps(self.cat)});\n")
 
     def run_check(self) -> int:
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
@@ -139,6 +148,40 @@ class CheckPublic(unittest.TestCase):
     def test_private_column_fails(self):
         cat = {"meta": {"mode": "public", "sources": {}}, "cols": ["name", "edp2_sep"], "rows": []}
         (self.root / "data" / "catalog.js").write_text(f"TNSX.onCatalog({json.dumps(cat)});\n")
+        self.assertFails()
+
+    # ---- host galaxies: only SN Ia-list (TNS-typed SN Ia) rows may be public
+    def test_host_row_for_an_untyped_object_fails(self):
+        self.cat["hosts"]["rows"].append(["2025abd", "associated", 0.5, None])   # e.g. a good-EDP2-only object
+        self.write_cat()
+        self.assertFails()
+
+    def test_host_membership_column_fails(self):
+        self.cat["hosts"]["cols"] = ["name", "host_status", "host_sep", "host_img", "host_in_good_edp2_list"]
+        self.cat["hosts"]["rows"] = [["2025abc", "associated", 1.2, "file", False]]
+        self.write_cat()
+        self.assertFails()
+
+    def test_host_sep_arcsec_column_fails(self):
+        self.cat["hosts"]["cols"][2] = "host_sep_arcsec"
+        self.write_cat()
+        self.assertFails()
+
+    def test_host_value_mentioning_edp2_fails(self):
+        self.cat["hosts"]["rows"][0][1] = "associated (good-EDP2 list)"
+        self.write_cat()
+        self.assertFails()
+
+    def test_host_figure_without_public_row_fails(self):
+        (self.root / "data" / "hosts" / "2025abd.webp").write_bytes(WEBP)
+        self.assertFails()
+
+    def test_non_webp_host_figure_fails(self):
+        (self.root / "data" / "hosts" / "2025abc.webp").write_bytes(b"\x89PNG\r\n" + bytes(40))
+        self.assertFails()
+
+    def test_host_row_pointing_at_missing_figure_fails(self):
+        (self.root / "data" / "hosts" / "2025abc.webp").unlink()
         self.assertFails()
 
     def test_private_mode_catalog_fails(self):

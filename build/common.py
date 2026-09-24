@@ -24,6 +24,9 @@ VISITS_CSV = HACK / "reports/rsp_tns_edp2/visits.csv"             # dp2.Visit (p
 SUMMARY_JSON = HACK / "reports/rsp_tns_edp2/summary.json"         # aggregate stats (DDP)
 EDP2_DIA_PARQUET = HACK / "reports/rsp_tns_edp2/diasources.parquet"  # PROPRIETARY
 TNS_DUMP = HACK / "data/truth/tns_public.parquet"                 # 2026-07-07 TNS public objects
+# Host-galaxy products (independent public-data pipeline, diagnostic): hosts.parquet, img/<name>.png.
+# Read-only here. `in_good_edp2_list` in it is DP2-derived and is never published (build/hosts.py).
+HOSTS_DIR = Path(os.environ.get("TNSX_HOSTS_DIR", HACK / "reports/tns_edp2_hosts/site"))
 ENV_FILE = Path(os.environ.get("TNSX_ENV_FILE", HACK / ".env"))   # TNS creds, RSP_TOKEN: never print
 
 CACHE = REPO / "cache"

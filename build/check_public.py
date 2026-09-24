@@ -11,6 +11,11 @@ and each ciphertext must be padded and look like ciphertext rather than text.
     keyinfo.js  TNSX.onKeyInfo({"v":1,"kdf":"PBKDF2-SHA256","iter":N,"salt":B64,"check":{"iv":B64,"ct":B64}});
     catalog.js  TNSX.onEnc("catalog",{"iv":B64,"ct":B64});
     NNN.js      TNSX.onEnc("lc-NNN",{"iv":B64,"ct":B64});
+
+Host galaxies (diagnostic): the public catalogue's "hosts" table may hold only objects
+this site shows as TNS-typed SN Ia, with host_* columns and no list-membership or DP2
+field; data/hosts/ may hold only <name>.webp figures of those rows. Host rows of the
+DP2-derived good-EDP2 list exist only inside the encrypted layer.
 """
 from __future__ import annotations
 
@@ -37,6 +42,13 @@ KEYINFO_RE = re.compile(r'TNSX\.onKeyInfo\(\{"v":1,"kdf":"PBKDF2-SHA256","iter":
                         r'","check":\{"iv":"' + _B64 + r'","ct":"' + _B64 + r'"\}\}\);\n?')
 ENC_RE = re.compile(r'TNSX\.onEnc\("(catalog|lc-\d{3})",\{"iv":"' + _B64 + r'","ct":"' + _B64 + r'"\}\);\n?')
 SHARD_FILE = re.compile(r"\d{3}\.js")
+
+# ---- host galaxies (data/catalog.js "hosts" table, data/hosts/<name>.webp)
+HOST_COL = re.compile(r"host_[a-z0-9_]+")
+HOST_BAD_COL = re.compile(r"list|good|edp2|diaobject|sep_arcsec", re.I)
+HOST_BAD_VALUE = re.compile(r"edp2|dp2|diaobject", re.I)
+HOST_IMG = re.compile(r"\d{4}[0-9A-Za-z]+\.webp")    # TNS names: 2025abc, 2026A, 20250227A
+MAX_HOST_IMG = 150_000
 
 
 def _b64(s: str) -> bytes:
@@ -124,8 +136,57 @@ def check_enc_dir(root: Path) -> list[str]:
     return errs
 
 
+def check_hosts(root: Path, cat: dict | None) -> list[str]:
+    """Public host rows only for objects typed SN Ia here; images only for those rows."""
+    errs, hosts = [], (cat or {}).get("hosts")
+    shown = set()
+    if hosts is not None:
+        cols, rows = hosts.get("cols", []), hosts.get("rows", [])
+        if not cols or cols[0] != "name" or not all(HOST_COL.fullmatch(c) for c in cols[1:]):
+            errs.append(f"data/catalog.js: host table columns must be name + host_*: {cols}")
+        bad = [c for c in cols if HOST_BAD_COL.search(c)]
+        if bad:
+            errs.append(f"data/catalog.js: forbidden host columns {bad}")
+        cc = cat["cols"]
+        typ = {r[cc.index("name")]: r[cc.index("type")] for r in cat["rows"]} if "type" in cc else {}
+        not_ia = [r[0] for r in rows if not str(typ.get(r[0]) or "").startswith("SN Ia")]
+        if not_ia:
+            errs.append(f"data/catalog.js: {len(not_ia)} public host rows are not TNS-typed SN Ia here "
+                        f"(only SN Ia-list hosts may be public), e.g. {not_ia[:3]}")
+        leaky = [r[0] for r in rows if any(isinstance(x, str) and HOST_BAD_VALUE.search(x) for x in r[1:])]
+        if leaky:
+            errs.append(f"data/catalog.js: host values mention DP2/EDP2 for {leaky[:3]}")
+        if "host_img" in cols:
+            k = cols.index("host_img")
+            shown = {r[0] for r in rows if r[k] == "file"}
+            if any(r[k] not in (None, "file") for r in rows):
+                errs.append('data/catalog.js: public host_img may only be "file" or null')
+    d = root / "data" / "hosts"
+    if d.exists():
+        files = set()
+        for f in sorted(d.iterdir()):
+            rel = f"data/hosts/{f.name}"
+            if not f.is_file() or not HOST_IMG.fullmatch(f.name):
+                errs.append(f"{rel}: data/hosts/ may hold only <TNS name>.webp files")
+                continue
+            b = f.read_bytes()
+            if b[:4] != b"RIFF" or b[8:12] != b"WEBP":
+                errs.append(f"{rel}: not a WebP image")
+            if len(b) > MAX_HOST_IMG:
+                errs.append(f"{rel}: larger than {MAX_HOST_IMG // 1000} KB")
+            files.add(f.name[:-5])
+        if files - shown:
+            errs.append(f"data/hosts/: {len(files - shown)} figures without a public host row, "
+                        f"e.g. {sorted(files - shown)[:3]}")
+        if shown - files:
+            errs.append(f"data/hosts/: {len(shown - files)} public host rows point at a missing figure")
+    elif shown:
+        errs.append("data/catalog.js: host_img says file but data/hosts/ is missing")
+    return errs
+
+
 def main(root: Path) -> int:
-    errs = []
+    errs, cat = [], None
     for f in root.rglob("*"):
         if not f.is_file():
             continue
@@ -142,7 +203,7 @@ def main(root: Path) -> int:
         if DP2_ID.search(txt):
             errs.append(f"{rel}: contains a DP2-catalog-like diaObjectId ({DP2_ID.search(txt).group()[:4]}...)")
         if rel.as_posix() == "data/catalog.js":
-            j = json.loads(txt[txt.index("(") + 1: txt.rindex(")")])
+            j = cat = json.loads(txt[txt.index("(") + 1: txt.rindex(")")])
             if j["meta"].get("mode") != "public":
                 errs.append(f"{rel}: meta.mode is {j['meta'].get('mode')!r}, not 'public'")
             bad = [c for c in j["cols"] if PRIVATE_COL.search(c)]
@@ -152,6 +213,7 @@ def main(root: Path) -> int:
             if bad:
                 errs.append(f"{rel}: private sources {bad}")
     errs += check_enc_dir(root)
+    errs += check_hosts(root, cat)
     for e in errs:
         print(f"check_public: {e}", file=sys.stderr)
     if not errs:

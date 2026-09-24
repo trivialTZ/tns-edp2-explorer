@@ -24,6 +24,28 @@
     });
     return out;
   }
+  // Host galaxies: an independent, diagnostic pipeline (build/hosts.py, SCHEMA.md).
+  function hostSection() {
+    var H = S.meta.hosts || {}, n = 0;
+    for (var i = 0; i < S.N; i++) if (U.V(i, 'host_status') != null) n++;
+    return '<h2>Host galaxies</h2>' +
+      '<p><span class="pill diag">Diagnostic — not for science use</span></p>' +
+      '<p>' + U.fint(n) + ' transients here have a host-galaxy card. It comes from an independent pipeline that uses only public catalogues and imaging: ' +
+      'Legacy Surveys DR10 for most objects, with Pan-STARRS1 DR2. It uses no TITAN code or products. Association weights are uncalibrated heuristics, and the fits depend on the model, ' +
+      'so treat every number as a diagnostic.</p><ul>' +
+      '<li><strong>Association.</strong> Candidates from the Pan-STARRS1 stack catalogue (north of −30°) and the Legacy Surveys DR10 Tractor catalogue are ranked by their separation in units of the ' +
+      'directional light radius (DLR), with a morphology term and a weight for being hostless. The DLR here is a circularised light scale (2.5 × the Tractor half-light radius, or the Pan-STARRS1 Kron radius), ' +
+      'not a true elliptical DLR; d_DLR is the separation divided by it.</li>' +
+      '<li><strong>Tiers.</strong> <em>Associated</em> means secure (both catalogues agree, or one catalogue is secure on its own) or probable (the two catalogues’ best candidates agree within 2″ but the heuristic gates are not met; accepted as a diagnostic tier). ' +
+      '<em>Ambiguous</em> means the catalogues disagree, several candidates compete, confidence is low, or a duplicate primary needs review: the figure shows the leading candidate dashed, and no fit is run. ' +
+      '<em>Not searched</em> means no catalogue covers the position.</li>' +
+      '<li><strong>SED fits.</strong> Bagpipes with a delayed-τ star-formation history, Calzetti dust with free A_V, nebular emission and free metallicity, at a fixed redshift, on Pan-STARRS1 grizy aperture photometry or Legacy grz plus unWISE W1/W2 fluxes. ' +
+      'A fit that fails the numerical checks (sampler target, residuals, posteriors piled at a prior edge) is withheld. The card shows the median and 16–84% range.</li>' +
+      '<li><strong>What is public.</strong> Only hosts of the SN Ia list, spectroscopically classified SNe Ia with a TNS redshift, are public: that selection uses public TNS data only. ' +
+      'The pipeline also covers a second list selected with proprietary Rubin DP2 detections, so those hosts appear only with team access.' +
+      (H.fits_withheld && !S.isPrivate ? ' While the host run is still going, public fit results show as pending until every public object is done.' : '') + '</li></ul>' +
+      '<p class="note">Figures use public imaging only: Legacy Surveys DR10 colour cutouts, or Pan-STARRS1 DR1 (via CDS hips2fits) or DSS2 colour where DR10 has no pixels. No Rubin pixels are used.</p>';
+  }
   function render() {
     var M = S.meta, src = M.sources || {}, win = M.window || {};
     var srcRows = Object.keys(src).map(function (k) {
@@ -63,6 +85,7 @@
       (U.isNum(win.mjd_start) ? '<li>The shaded band is the EDP2 visit window, ' + esc(U.niceDate(win.mjd_start)) + ' to ' + esc(U.niceDate(win.mjd_end)) + ' (MJD ' + U.fx(win.mjd_start, 3) + '–' + U.fx(win.mjd_end, 3) + ').</li>' : '') +
       '</ul>' +
 
+      (U.has('host_status') ? hostSection() : '') +
       (notes ? '<h2>Method notes</h2><ul>' + notes + '</ul>' : '') +
       (stats ? '<h2>Cross-match statistics</h2><p>Aggregate numbers from the TNS × EDP2 cross-match. They are derived data products and contain no catalogue rows.</p>' +
         '<div class="card table-card"><div class="table-wrap"><table class="data"><tbody>' + stats + '</tbody></table></div></div>' : '') +
@@ -82,6 +105,10 @@
       '<li><strong>Rubin alerts</strong> via the <strong>Fink</strong> broker (Möller et al. 2021, MNRAS 501, 3272). <a href="https://lsst.fink-portal.org/" target="_blank" rel="noopener">lsst.fink-portal.org</a></li>' +
       '<li><strong>NSF–DOE Vera C. Rubin Observatory</strong> Data Preview 2: dp2.Visit pointing metadata' + (S.isPrivate ? ' and DP2 DiaObject, DiaSource and forced-photometry catalogues (proprietary)' : '') +
       ' (Ivezić et al. 2019, ApJ 873, 111). <a href="https://rubinobservatory.org/" target="_blank" rel="noopener">rubinobservatory.org</a></li>' +
+      (U.has('host_status') ? '<li><strong>Host imaging and catalogues</strong>: the Legacy Surveys (Dey et al. 2019, AJ 157, 168; <a href="https://www.legacysurvey.org/acknowledgment/" target="_blank" rel="noopener">acknowledgment</a>), ' +
+        'queried through the NOIRLab Astro Data Lab; the Pan-STARRS1 Surveys and PS1 public science archive (Chambers et al. 2016, arXiv:1612.05560; Flewelling et al. 2020, ApJS 251, 7) via MAST and CDS hips2fits; ' +
+        'and the Digitized Sky Surveys, produced at the Space Telescope Science Institute under U.S. Government grant NAG W-2166. SED fits use Bagpipes (Carnall et al. 2018, MNRAS 480, 4379) with Nautilus (Lange 2023, MNRAS 525, 3181); ' +
+        'host photometry uses HostPhot (Müller-Bravo et al. 2022, JOSS 7, 4508).</li>' : '') +
       '<li>Link-outs to <a href="https://www.wiserep.org/" target="_blank" rel="noopener">WISeREP</a> (Yaron &amp; Gal-Yam 2012, PASP 124, 668) and the <a href="https://www.legacysurvey.org/" target="_blank" rel="noopener">DESI Legacy Imaging Surveys</a> viewer. Charts use <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">Plotly.js</a>; the browsing flow follows LSST DESC FASTDB.</li>' +
       '</ul></div></article>';
   }

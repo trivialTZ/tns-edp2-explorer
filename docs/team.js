@@ -19,6 +19,7 @@
   var DIR = 'data/edp2/', STORE = 'tnsx-team-key', NOTICE = 'tnsx-team-notice';
   var CHECK_TEXT = 'tnsx-edp2 key check v1', AAD_PREFIX = 'tnsx-edp2/v1/';   // build/crypto_layer.py
   var MIN_ITER = 600000, MAX_ITER = 10000000;
+  var HOST_IMG_KEY = '_hosts';                                                   // build/hosts.py SHARD_IMG_KEY
   var subtle = window.crypto && window.crypto.subtle;                           // absent outside secure contexts
   var NO_CRYPTO = 'This browser cannot decrypt on this page: WebCrypto is only available over https or on localhost.';
   var key = null, tag = '', keyinfo = null, kiPromise = null, blobs = {};
@@ -170,6 +171,7 @@
         if (!/^((n|t0|t1)_)?edp2_[a-z0-9_]+$/.test(c) || d.cols.indexOf(c) >= 0) throw new Error('unexpected column ' + c);
       });
       Object.keys(srcs).forEach(function (k) { if (!/^edp2_[a-z0-9_]+$/.test(k)) throw new Error('unexpected source ' + k); });
+      if (p.hosts) X.checkHostTable(p.hosts);
       var at = new Map();
       names.forEach(function (n, k) { at.set(String(n), k); });
       var jn = d.cols.indexOf('name'), nc = cols.length;
@@ -185,6 +187,11 @@
       Object.keys(srcs).forEach(function (k) { merged[k] = srcs[k]; });            // EDP2 first, as in the private build
       Object.keys(d.meta.sources || {}).forEach(function (k) { if (!merged[k]) merged[k] = d.meta.sources[k]; });
       d.meta.sources = merged;
+      if (p.hosts) {                                   // host rows only team access may show
+        var jhs = d.cols.indexOf('host_status'), jn2 = d.cols.indexOf('name'), had = new Set();
+        if (jhs >= 0) d.rows.forEach(function (r) { if (r[jhs] != null) had.add(String(r[jn2])); });
+        X.mergeHosts(d, p.hosts).forEach(function (n) { if (!had.has(n)) S.hostTeam.add(n); });
+      }
       d.meta.mode = 'private';
       d.meta.team = true;
       if (Array.isArray(p.notes)) d.meta.notes = p.notes;
@@ -206,6 +213,12 @@
       Object.keys(e).forEach(function (o) {
         var s = e[o];
         if (!s || typeof s !== 'object') throw new Error('unexpected ' + name + ' payload');
+        if (o === HOST_IMG_KEY) {                         // {name: data:image/webp;base64,...}
+          Object.keys(s).forEach(function (n) {
+            if (typeof s[n] !== 'string' || !/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(s[n])) throw new Error('unexpected ' + name + ' host figure');
+          });
+          return;
+        }
         Object.keys(s).forEach(function (k) {
           if (!/^edp2_[a-z0-9_]+$/.test(k) || !s[k] || !Array.isArray(s[k].t)) throw new Error('unexpected ' + name + ' payload');
         });
@@ -219,6 +232,7 @@
   };
   T.mergeShard = function (pub, enc) {
     Object.keys(enc).forEach(function (o) {
+      if (o === HOST_IMG_KEY) { Object.keys(enc[o]).forEach(function (n) { S.hostImg[n] = enc[o][n]; }); return; }
       var t = pub[o] || (pub[o] = {});
       Object.keys(enc[o]).forEach(function (k) { t[k] = enc[o][k]; });
     });

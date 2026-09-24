@@ -37,7 +37,7 @@
     }
     cur = i; S.lastObj = i; O = null;
     document.title = U.fullName(i) + ' · TNS EDP2 Explorer';
-    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) +
+    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) + hostCardHtml(i) +
       '<section class="card lc-card" aria-labelledby="lc-h"><div class="lc-head"><h2 id="lc-h">Lightcurve</h2><div class="lc-ctl" id="lc-ctl"></div></div>' +
       '<div id="lc-legend"></div>' +
       '<div class="lc-plot" id="lc-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:260px;height:10px;margin:0 auto 10px"></span>Loading lightcurve…</div></div></div>' +
@@ -49,6 +49,7 @@
     if (h1 && document.activeElement && document.activeElement !== document.body) h1.focus({ preventScroll: true });
     Promise.all([X.loadShard(X.shardOf(i)), X.ensurePlotly()]).then(function (res) {
       if (cur !== i) return;
+      fillHostImg(i);
       prepare(i, (res[0] || {})[V(i, 'name')] || {});
       renderControls();
       updatePlot();
@@ -116,7 +117,7 @@
     if (U.has('n_visits')) h += fact('LSSTCam pointings', U.fint(V(i, 'n_visits')) + ' <span class="muted">within 2.1°</span>',
       U.has('n_visits_active') ? U.fint(V(i, 'n_visits_active')) + ' during [discovery − 30, + 100] d' : '');
     S.cols.filter(function (c) {
-      if (K.KNOWN_COLS.indexOf(c) >= 0) return false;
+      if (K.KNOWN_COLS.indexOf(c) >= 0 || /^host_/.test(c)) return false;
       var m = /^(n|t0|t1)_(.+)$/.exec(c);
       return !(m && ((S.meta.sources || {})[m[2]] || K.SRC_SHORT[m[2]]));
     }).forEach(function (c) { var v = V(i, c); h += fact(c, v == null || v === '' ? '—' : esc(typeof v === 'object' ? JSON.stringify(v) : v)); });
@@ -142,6 +143,93 @@
     h += '<div class="links" aria-label="External links">' + L.join('') + '</div></header>';
     return h;
   }
+  // ------------------------------------------------------------------ host galaxy (diagnostic)
+  var HOST_STATUS = { associated: 'Associated', ambiguous: 'Ambiguous', 'no-host': 'No host found', failed: 'Not searched' };
+  var HOST_TIER = {
+    secure_consensus_pilot: 'secure: Pan-STARRS1 and Legacy Surveys agree',
+    secure_single_catalog_pilot: 'secure: one catalogue',
+    probable_consensus_user_accepted_diagnostic: 'probable: both catalogues agree, heuristic gates not met',
+    ambiguous_catalog_disagreement: 'the catalogues disagree',
+    ambiguous_legacy_only: 'ambiguous in Legacy Surveys',
+    ambiguous_ps1_only: 'ambiguous in Pan-STARRS1',
+    ambiguous_low_confidence: 'low confidence',
+    duplicate_primary_sensitive_review_required: 'duplicate primary, needs review',
+    hostless_or_no_catalog_candidate: 'no catalogue candidate',
+    not_attempted: 'not attempted'
+  };
+  var HOST_FIT = {
+    qc_pass: 'Passed QC', qc_fail: 'Withheld (QC fail)', pending: 'Fit pending',
+    not_attempted_ambiguous: 'Not fitted', not_attempted_no_host: 'Not fitted', not_attempted_no_catalog_coverage: 'Not fitted',
+    not_attempted_implausible_tns_z: 'Not fitted', no_host_redshift: 'Not fitted', photometry_or_handoff_failed: 'Not fitted'
+  };
+  var HOST_FIT_WHY = {
+    qc_fail: 'The sampler ran, but the residual or prior-boundary checks failed, so the values are withheld.',
+    not_attempted_ambiguous: 'No unique host, so no fit was run (candidate-mixture fits are future work).',
+    not_attempted_no_host: 'No host candidate was found.',
+    not_attempted_no_catalog_coverage: 'No catalogue covers this position: south of Pan-STARRS1 (Dec < −30°) and outside Legacy Surveys DR10.',
+    not_attempted_implausible_tns_z: 'The TNS redshift is implausible for this type, so the object was held out.',
+    no_host_redshift: 'No redshift is available to hold fixed in the fit.',
+    photometry_or_handoff_failed: 'Host photometry failed, so there is nothing to fit.'
+  };
+  var HOST_POST = [['logm', 'log M*', 'M☉'], ['logsfr', 'log SFR', 'M☉ yr⁻¹, 100 Myr'], ['logssfr', 'log sSFR', 'yr⁻¹'],
+    ['age', 'Mass-weighted age', 'Gyr'], ['av', 'A_V', 'mag, Calzetti']];
+  X.HOST_STATUS = HOST_STATUS; X.HOST_FIT = HOST_FIT;
+  function hostCardHtml(i) {
+    if (!U.has('host_status') || V(i, 'host_status') == null) return '';
+    var st = V(i, 'host_status'), fit = V(i, 'host_fit'), name = V(i, 'name'), img = V(i, 'host_img');
+    var hra = V(i, 'host_ra'), hdec = V(i, 'host_dec'), team = S.hostTeam.has(String(name));
+    var h = '<section class="card host-card" aria-labelledby="host-h"><div class="host-head"><h2 id="host-h">Host galaxy</h2>' +
+      '<span class="pill diag">Diagnostic — not for science use</span>' +
+      (team ? '<span class="pill private" title="This host row comes from the encrypted team-access layer">team access</span>' : '') + '</div>';
+    var fig;
+    if (img === 'file') fig = '<img src="data/hosts/' + encodeURIComponent(name) + '.webp" width="400" height="400" loading="lazy" alt="Host-selection image around ' + esc(U.fullName(i)) + '">';
+    else if (img === 'shard') fig = S.hostImg[name] ? '<img src="' + S.hostImg[name] + '" width="400" height="400" alt="Host-selection image around ' + esc(U.fullName(i)) + '">' :
+      '<div class="host-noimg sk" id="host-img-slot" data-name="' + esc(name) + '"></div>';
+    else fig = '<div class="host-noimg">No host-selection image</div>';
+    h += '<div class="host-body"><figure class="host-fig">' + fig + '<figcaption>Magenta crosshair: the transient. White ellipses: Legacy Surveys candidates (2.5 × half-light radius); ' +
+      'white circles: Pan-STARRS1-only candidates. Amber: the selected host, dashed when ambiguous. North up, east left; the bar at lower left gives the scale. Background: ' +
+      esc(V(i, 'host_imgsrc') || 'Legacy Surveys DR10, or Pan-STARRS1 / DSS2 where DR10 has no pixels') + '.</figcaption></figure><div class="host-info"><dl class="facts host-facts">';
+    var tier = V(i, 'host_tier');
+    h += fact('Association', '<span class="pill' + (st === 'associated' ? '' : ' outline') + '">' + esc(HOST_STATUS[st] || st) + '</span>', tier ? esc(HOST_TIER[tier] || tier.replace(/_/g, ' ')) : '');
+    if (V(i, 'host_id')) {
+      var catName = { LS_DR10: 'Legacy Surveys DR10', PS1_DR2: 'Pan-STARRS1 DR2' }[V(i, 'host_cat')] || V(i, 'host_cat') || '';
+      h += fact(st === 'ambiguous' ? 'Leading candidate' : 'Host', '<span class="mono">' + esc(V(i, 'host_id')) + '</span>' + copyBtn(V(i, 'host_id'), 'host ID'), esc(catName));
+    }
+    if (U.isNum(V(i, 'host_sep'))) {
+      h += fact('Separation', U.fx(V(i, 'host_sep'), 2) + '″', U.isNum(V(i, 'host_ddlr')) ? 'd_DLR ' + U.fx(V(i, 'host_ddlr'), 2) +
+        (U.isNum(V(i, 'host_dlr')) ? ' · DLR ' + U.fx(V(i, 'host_dlr'), 1) + '″, circularised' : '') : '');
+    }
+    if (U.isNum(V(i, 'host_z'))) {
+      h += fact('Redshift', U.fx(V(i, 'host_z'), 4) + (V(i, 'host_ztype') ? ' <span class="muted">' + esc(V(i, 'host_ztype')) + '</span>' : ''),
+        esc(V(i, 'host_zsrc') || '') + (U.isNum(V(i, 'host_zcat')) ? ' · catalogue spec-z ' + U.fx(V(i, 'host_zcat'), 4) : ''));
+    }
+    if (V(i, 'host_bands')) h += fact('Photometry', esc(String(V(i, 'host_bands')).split(',').join(' ')), esc(V(i, 'host_phot') || ''));
+    h += '</dl><div class="host-fit"><h3>Bagpipes SED fit <span class="pill ' + (fit === 'qc_pass' ? '' : 'outline') + '">' + esc(HOST_FIT[fit] || fit || '—') + '</span></h3>';
+    if (fit === 'qc_pass' && U.isNum(V(i, 'host_logm_p50'))) {
+      h += '<table class="data host-post"><thead><tr><th>Quantity</th><th class="num">Median</th><th class="num">16–84%</th></tr></thead><tbody>' +
+        HOST_POST.map(function (q) {
+          var m = V(i, 'host_' + q[0] + '_p50'), a = V(i, 'host_' + q[0] + '_p16'), b = V(i, 'host_' + q[0] + '_p84');
+          return '<tr><td>' + esc(q[1]) + ' <span class="muted">' + esc(q[2]) + '</span></td><td class="num">' + U.fx(m, 2) + '</td><td class="num">' +
+            (U.isNum(a) && U.isNum(b) ? U.fx(a, 2) + ' – ' + U.fx(b, 2) : '—') + '</td></tr>';
+        }).join('') + '</tbody></table><p class="host-note">Delayed-τ star formation, Calzetti dust, redshift held fixed. Ages, SFRs and sSFRs depend on the model.</p>';
+    } else if (fit === 'pending') {
+      h += '<p class="host-note">Fit pending.' + ((S.meta.hosts || {}).fits_withheld && !S.isPrivate ? ' Fit results appear here once the host run has finished for every public object.' : '') + '</p>';
+    } else if (HOST_FIT_WHY[fit]) h += '<p class="host-note">' + esc(HOST_FIT_WHY[fit]) + '</p>';
+    h += '</div>';
+    if (V(i, 'host_notes')) h += '<p class="host-note muted">Pipeline notes: ' + esc(V(i, 'host_notes')) + '</p>';
+    if (U.isNum(hra) && U.isNum(hdec)) {
+      h += '<div class="links">' + extLink('https://www.legacysurvey.org/viewer?ra=' + hra.toFixed(6) + '&dec=' + hdec.toFixed(6) + '&layer=ls-dr10&zoom=16&mark=' +
+        hra.toFixed(6) + ',' + hdec.toFixed(6), 'Legacy Survey viewer at the host') + '</div>';
+    }
+    return h + '</div></div></section>';
+  }
+  function fillHostImg(i) {
+    var slot = document.getElementById('host-img-slot');
+    var uri = S.hostImg[V(i, 'name')];
+    if (!slot) return;
+    slot.outerHTML = uri ? '<img src="' + uri + '" width="400" height="400" alt="Host-selection image around ' + esc(U.fullName(i)) + '">' : '<div class="host-noimg">No host-selection image</div>';
+  }
+
   function wire(root) {
     root.querySelector('.prevnext').addEventListener('click', function (e) {
       var b = e.target.closest('button[data-rel]');

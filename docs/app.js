@@ -62,6 +62,7 @@
     view: null, lastObj: null, listQuery: '',
     visits: null, visitsState: 'idle', nearCache: new Map(),
     shards: {}, shardRaw: {}, shardPromises: {}, plotlyPromise: null,
+    hostImg: {}, hostTeam: new Set(),       // host figures from encrypted shards; host rows only team access shows
     theme: 'auto'
   };
   X.views = {};
@@ -372,6 +373,33 @@
     S.shardPromises[n] = p;
     p.catch(function () { delete S.shardPromises[n]; });
     return p;
+  };
+  // Host galaxies: a sparse table {cols: ["name", "host_*"...], rows} merged into catalogue columns
+  // (null where an object has no host row). Validated before anything is changed. Returns the names set.
+  X.checkHostTable = function (t) {
+    if (!t || !Array.isArray(t.cols) || !Array.isArray(t.rows) || t.cols[0] !== 'name' ||
+        !t.cols.slice(1).every(function (c) { return /^host_[a-z0-9_]+$/.test(c); }) ||
+        !t.rows.every(function (r) { return Array.isArray(r) && r.length === t.cols.length; })) {
+      throw new Error('unexpected host table');
+    }
+  };
+  X.mergeHosts = function (d, t) {
+    X.checkHostTable(t);
+    var jn = d.cols.indexOf('name'), at = new Map(), names = [];
+    d.rows.forEach(function (r, i) { at.set(String(r[jn]), i); });
+    var idx = t.cols.map(function (c, k) {
+      if (!k) return -1;
+      var j = d.cols.indexOf(c);
+      if (j < 0) { j = d.cols.length; d.cols.push(c); d.rows.forEach(function (r) { r.push(null); }); }
+      return j;
+    });
+    t.rows.forEach(function (r) {
+      var i = at.get(String(r[0]));
+      if (i === undefined) return;
+      for (var k = 1; k < idx.length; k++) d.rows[i][idx[k]] = r[k];
+      names.push(String(r[0]));
+    });
+    return names;
   };
   X.shardOf = function (i) { var s = U.V(i, 'shard'); return U.isNum(s) ? s : Math.floor(i / K.SHARD_SIZE); };
   X.ensurePlotly = function () {
@@ -726,6 +754,9 @@
     // Team access: the decrypted EDP2 payload (or null) is merged before the catalogue is initialised.
     Promise.all([X.catalogLoad, X.team ? X.team.ready : null]).then(function (res) {
       if (!S.catalogRaw) throw new Error('data/catalog.js loaded but did not call TNSX.onCatalog');
+      if (S.catalogRaw.hosts) {
+        try { X.mergeHosts(S.catalogRaw, S.catalogRaw.hosts); } catch (e) { console.warn('hosts: ' + e.message); }
+      }
       if (res[1]) X.team.apply(S.catalogRaw, res[1]);
       initCatalog(S.catalogRaw);
       S.catalogRaw = null;

@@ -21,6 +21,12 @@
     S.srcKeys.forEach(function (s) { c.push({ id: 'n_' + s, label: U.srcShort(s), sub: 'measurements', num: true, src: s, on: true, title: U.srcLabel(s) }); });
     if (U.has('n_visits_active')) c.push({ id: 'n_visits_active', label: 'Pointings', sub: 'active / all', num: true, on: true,
       title: 'dp2.Visit centres within 2.1° during [discovery − 30, + 100] d / at any time' });
+    if (U.has('host_status')) {
+      c.push({ id: 'host_status', label: 'Host', sub: 'diagnostic', on: true, title: 'Host association and SED fit status (diagnostic, not for science use)' },
+        { id: 'host_z', label: 'Host z', num: true, on: false }, { id: 'host_logm_p50', label: 'Host log M*', num: true, on: false },
+        { id: 'host_sep', label: 'Host sep.', sub: 'arcsec', num: true, on: false }, { id: 'host_ddlr', label: 'Host d_DLR', num: true, on: false },
+        { id: 'host_fit', label: 'Host fit', on: false }, { id: 'host_id', label: 'Host ID', mono: true, on: false });
+    }
     if (S.isPrivate) {
       if (U.has('edp2_sep')) c.push({ id: 'edp2_sep', label: 'EDP2 sep.', sub: 'arcsec', num: true, on: true, priv: true });
       if (U.has('edp2_ndia')) c.push({ id: 'edp2_ndia', label: 'EDP2 nDia', num: true, on: true, priv: true });
@@ -107,6 +113,11 @@
       '<label for="f-rad">Radius</label><input class="input input-sm" id="f-rad" data-pos="rad" placeholder="' + K.DEFAULT_CONE_AS + ' arcsec" inputmode="decimal" autocomplete="off"></div>' +
       '<p class="facet-note" id="cone-hint" aria-live="polite">Cone search. Paste “RA Dec” into the RA box to fill both.</p>', false);
     if (num.nva) h += facetShell('nva', num.nva.label, numWidget(num.nva), false);
+    if (cat.hst) {
+      h += '<p class="rail-group">Host galaxy <span class="pill diag">diagnostic</span></p>';
+      ['hst', 'hfit'].forEach(function (id) { if (cat[id]) h += facetShell(id, cat[id].label, catBody(cat[id]), false); });
+      ['hz', 'hlogm'].forEach(function (id) { if (num[id]) h += facetShell(id, num[id].label, numWidget(num[id]), false); });
+    }
     var tf = F.num.filter(function (d) { return d.group === 'time'; });
     if (tf.length) h += facetShell('time', 'Photometry dates', tf.map(function (d) { return numWidget(d, true); }).join('<div style="height:14px"></div>'), false);
     if (S.isPrivate) {
@@ -124,6 +135,8 @@
     S.srcKeys.forEach(function (k) { o.push(['n_' + k, U.srcShort(k) + ' measurements']); });
     S.srcKeys.forEach(function (k) { if (U.has('t0_' + k)) o.push(['t0_' + k, U.srcShort(k) + ' first point']); });
     if (U.has('n_visits_active')) o.push(['n_visits_active', 'Active pointings']);
+    if (U.has('host_z')) o.push(['host_z', 'Host redshift']);
+    if (U.has('host_logm_p50')) o.push(['host_logm_p50', 'Host log M*']);
     if (S.isPrivate) {
       if (U.has('edp2_sep')) o.push(['edp2_sep', 'EDP2 separation']);
       if (U.has('edp2_ndia')) o.push(['edp2_ndia', 'EDP2 nDiaSources']);
@@ -446,6 +459,16 @@
       case 'edp2_sep': v = V(i, 'edp2_sep'); return '<td class="num">' + (U.isNum(v) ? '<span' + (v > S.matchR ? ' class="muted"' : '') + '>' + U.fx(v, 2) + '</span>' : '<span class="none">—</span>') + '</td>';
       case 'edp2_ndia': v = V(i, 'edp2_ndia'); return '<td class="num">' + (U.isNum(v) ? U.fint(v) : '<span class="none">—</span>') + '</td>';
       case 'edp2_lead': v = V(i, 'edp2_lead'); return '<td class="num">' + (U.isNum(v) ? U.fx(v, 1) : '<span class="none">—</span>') + '</td>';
+      case 'host_status':
+        v = V(i, 'host_status');
+        if (v == null) return '<td><span class="none">—</span></td>';
+        var hf = V(i, 'host_fit');
+        return '<td><span class="' + (v === 'associated' ? '' : 'muted') + '">' + esc((X.HOST_STATUS || {})[v] || v) + '</span>' +
+          (hf ? '<span class="rng">' + esc((X.HOST_FIT || {})[hf] || hf) + '</span>' : '') + '</td>';
+      case 'host_fit': v = V(i, 'host_fit'); return '<td>' + (v ? esc((X.HOST_FIT || {})[v] || v) : '<span class="none">—</span>') + '</td>';
+      case 'host_z': v = V(i, 'host_z'); return '<td class="num">' + (U.isNum(v) ? U.fx(v, 4) : '<span class="none">—</span>') + '</td>';
+      case 'host_logm_p50': case 'host_sep': case 'host_ddlr':
+        v = V(i, c.id); return '<td class="num">' + (U.isNum(v) ? U.fx(v, 2) : '<span class="none">—</span>') + '</td>';
       case 'alert_ids':
         v = String(V(i, 'alert_ids') || '').split(',').filter(Boolean);
         return '<td class="mono"' + (v.length > 1 ? ' title="' + esc(v.join(', ')) + '"' : '') + '>' +

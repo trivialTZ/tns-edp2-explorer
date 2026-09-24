@@ -98,8 +98,13 @@ LC (columnar, one per source per object; arrays have equal length):
  "sources": {key: {"label", "desc", "survey", "n_objects", "n_points"}},  // only sources present
  "stats": {...aggregate cross-match numbers, from summary.json...},
  "notes": [strings shown on the About page],
- "team_access": true}   // only when the build ships the encrypted layer, data/edp2/
+ "team_access": true,   // only when the build ships the encrypted layer, data/edp2/
+ "hosts": {"n_rows", "n_images", "fits_withheld"}}   // only when host products exist
 ```
+
+`catalog.hosts` (optional): a sparse host-galaxy table, `{"cols": ["name", "host_*"...], "rows": [[...], ...]}`,
+one row per object that has a public host row (see "Host galaxies" below). The site
+merges it into catalogue columns at load (null where an object has none).
 
 `catalog.cols` and `rows`: one row per object, in catalog order. Public columns:
 
@@ -127,6 +132,32 @@ edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc` (the unlocked public site
 adds the same columns from section 3). `edp2_id` is the DP2 catalogue
 diaObjectId, a different ID space from `alert_ids`. IDs are always strings:
 ~1e17 integers do not survive float64 or JS Number.
+
+### Host galaxies
+
+From the independent host pipeline (`common.HOSTS_DIR`, read by `build/hosts.py`);
+diagnostic only. Columns of the `hosts` table:
+
+| col | meaning |
+|---|---|
+| host_status | `associated`, `ambiguous`, `no-host` or `failed` (not searched) |
+| host_tier | the pipeline's association tier |
+| host_id, host_cat | selected host (`LS:<release>:<brick>:<objid>` in `LS_DR10`, or `PS1:<objID>` in `PS1_DR2`); null when ambiguous |
+| host_ra, host_dec | host position (deg) |
+| host_sep, host_dlr, host_ddlr | separation (arcsec), circularised light scale (arcsec), separation / light scale |
+| host_z, host_ztype, host_zsrc, host_zcat | fitted (fixed) redshift, `spec`/`photo`, its source, host catalogue spec-z |
+| host_nbands, host_bands, host_phot, host_arm | photometry used in the fit |
+| host_fit | fit status: `qc_pass`, `qc_fail` (values withheld), `pending`, `not_attempted_*`, ... |
+| host_{logm,logsfr,logssfr,age,av}_{p16,p50,p84} | Bagpipes posterior quantiles (qc_pass only) |
+| host_notes | pipeline notes, minus the boilerplate and the tier |
+| host_imgsrc | the imaging behind the figure (Legacy Surveys DR10, Pan-STARRS1 or DSS2) |
+| host_img | `"file"`: `data/hosts/<name>.webp`; `"shard"`: a data URI in the encrypted shard; null: none |
+
+Public rows are only those with `in_snia_list` that this site shows as TNS-typed
+`SN Ia*`; `in_good_edp2_list` is never written. While any public row's fit is
+pending, public rows show `host_fit = "pending"` with the fit columns null (their
+real values are in the encrypted `hosts` table). `data/hosts/` holds only
+`<name>.webp` files for public rows with `host_img == "file"`.
 
 ## 3. Encrypted EDP2 layer (team access)
 
@@ -185,9 +216,15 @@ catalog  {"v":1,
                   "n_edp2_dia","t0_edp2_dia","t1_edp2_dia","n_edp2_fp",...],
           "rows":[[...], ...],                     // one per name, aligned with names
           "sources":{"edp2_dia":{label,desc,survey,n_objects,n_points}, "edp2_fp":{...}},
-          "notes":[private-build About notes], "match_radius_arcsec":2.0}
-lc-NNN   {"2025abc": {"edp2_dia": LC, "edp2_fp": LC}, ...}   // LC as in section 2; {} if none
+          "notes":[private-build About notes], "match_radius_arcsec":2.0,
+          "hosts":{"cols":[...], "rows":[...]}}   // optional: encrypted-only host rows, plus the
+                                                  // full values of public rows while fits are withheld
+lc-NNN   {"2025abc": {"edp2_dia": LC, "edp2_fp": LC}, ...,  // LC as in section 2; {} if none
+          "_hosts": {"2025xyz": "data:image/webp;base64,..."}}  // optional: figures of encrypted-only host rows
 ```
+
+The site merges the encrypted `hosts` rows into the host columns by name. Rows
+that only the encrypted table has are marked "team access" on their cards.
 
 Browser side: the derived key's raw bytes are stored with the salt as
 `{"v":1,"salt":B64,"key":B64}` under `tnsx-team-key` in `sessionStorage`
