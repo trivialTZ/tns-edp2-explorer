@@ -35,6 +35,7 @@
       if (U.has('edp2_ndia')) c.push({ id: 'edp2_ndia', label: 'EDP2 nDia', num: true, on: true, priv: true });
       if (U.has('edp2_lead')) c.push({ id: 'edp2_lead', label: 'EDP2 lead', sub: 'days', num: true, on: true, priv: true });
       if (U.has('edp2_tc')) c.push({ id: 'edp2_tc', label: 'EDP2 time-consistent', on: false, priv: true });
+      if (U.has('edp2_coadd_bands')) c.push({ id: 'edp2_coadd_bands', label: 'EDP2 coadd', sub: 'bands', on: true, priv: true, title: 'Bands with a DP2 deep coadd at this position' });
     }
     c.push({ id: 'ra', label: 'RA', sub: 'deg', num: true, on: false, mono: true }, { id: 'dec', label: 'Dec', sub: 'deg', num: true, on: false, mono: true },
       { id: 'internal', label: 'Internal names', on: false });
@@ -128,6 +129,7 @@
     if (tf.length) h += facetShell('time', 'Photometry dates', tf.map(function (d) { return numWidget(d, true); }).join('<div style="height:14px"></div>'), false);
     if (S.isPrivate) {
       h += '<p class="private-label" style="margin:24px 0 0">' + U.icon('lock', 2).replace('<svg', '<svg width="12" height="12"') + ' Rubin DP2 · proprietary</p>';
+      if (cat.ecov) h += facetShell('ecov', cat.ecov.label, catBody(cat.ecov), true, 'private');
       h += facetShell('em', cat.em.label, catBody(cat.em), true, 'private');
       h += facetShell('etc', cat.etc.label, catBody(cat.etc), false, 'private');
       ['esep', 'endia', 'elead'].forEach(function (id) { if (num[id]) h += facetShell(id, num[id].label, numWidget(num[id]), false, 'private'); });
@@ -493,6 +495,8 @@
         return '<td class="mono"' + (v.length > 1 ? ' title="' + esc(v.join(', ')) + '"' : '') + '>' +
           (v.length ? esc(v[0]) + (v.length > 1 ? ' <span class="muted">+' + (v.length - 1) + '</span>' : '') : '<span class="none">—</span>') + '</td>';
       case 'edp2_id': v = V(i, 'edp2_id'); return '<td class="mono">' + (v != null && v !== '' ? esc(v) : '<span class="none">—</span>') + '</td>';
+      case 'edp2_coadd_bands': v = V(i, 'edp2_coadd_bands');
+        return '<td class="mono">' + (V(i, 'edp2_coadd') === true ? esc(v || '') : '<span class="none">outside</span>') + '</td>';
       case 'edp2_tc': v = V(i, 'edp2_tc'); return '<td>' + (v === true || v === 1 ? 'yes' : v === false || v === 0 ? 'no' : '<span class="none">—</span>') + '</td>';
       case 'ra': return '<td class="num mono">' + U.fx(V(i, 'ra'), 5) + '</td>';
       case 'dec': return '<td class="num mono">' + U.fx(V(i, 'dec'), 5) + '</td>';

@@ -138,6 +138,11 @@
       h += fact('EDP2 nDiaSources', U.isNum(V(i, 'edp2_ndia')) ? U.fint(V(i, 'edp2_ndia')) : '—');
       h += fact('EDP2 lead time', U.isNum(V(i, 'edp2_lead')) ? U.fx(V(i, 'edp2_lead'), 2) + ' d' : '—', 'TNS discovery − first positive EDP2 detection');
       h += fact('Time-consistent', tc === true || tc === 1 ? 'Yes' : tc === false || tc === 0 ? 'No' : '—');
+      if (U.has('edp2_coadd')) {
+        var co = V(i, 'edp2_coadd'), cb = String(V(i, 'edp2_coadd_bands') || '');
+        h += fact('EDP2 deep coadd', co === true ? 'Inside' + (cb ? ' <span class="mono">' + esc(cb.split('').join(' ')) + '</span>' : '') : co === false ? 'Outside the footprint' : '—',
+          co === true ? 'bands with a DP2 deep coadd here' : '');
+      }
       h += '</dl>';
     }
     var L = [extLink('https://www.wis-tns.org/object/' + encodeURIComponent(name), 'TNS'),

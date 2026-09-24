@@ -51,7 +51,7 @@
     // Columns the object page knows how to show; anything else is listed as key: value.
     KNOWN_COLS: ['name', 'prefix', 'ra', 'dec', 'type', 'z', 'group', 'disc_mjd', 'disc_mag', 'disc_filter', 'internal',
       'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'region', 'debass',
-      'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc']
+      'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc', 'edp2_coadd', 'edp2_coadd_bands']
   };
   var FAM_EXACT = { R: 'R', I: 'I', V: 'V', B: 'B', L: 'L' };
   var FAM_LOWER = { u: 'u', g: 'g', r: 'r', i: 'i', z: 'z', y: 'y', o: 'o', c: 'c', w: 'w', v: 'V', b: 'B', l: 'L', clear: 'Clear' };

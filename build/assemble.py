@@ -32,7 +32,8 @@ import hosts as H
 PUBLIC_NORM_FILES = ["ztf.parquet", "tns.parquet", "lsst_alert.parquet"]
 EDP2_NORM = C.PRIVATE_NORM / "edp2.parquet"
 EDP2_OBJECTS = C.PRIVATE_NORM / "edp2_objects.parquet"
-EDP2_COLS = ["edp2_id", "edp2_sep", "edp2_ndia", "edp2_lead", "edp2_tc"]
+EDP2_COADD = C.PRIVATE_NORM / "edp2_coadd.parquet"         # build/fetch_edp2_coadd.py
+EDP2_COLS = ["edp2_id", "edp2_sep", "edp2_ndia", "edp2_lead", "edp2_tc", "edp2_coadd", "edp2_coadd_bands"]
 CODE_SUFFIXES = {".html", ".js", ".css", ".svg", ".png", ".ico", ".txt"}
 ROUND = {"ra": 6, "dec": 6, "z": 5, "disc_mjd": 4, "disc_mag": 2, "edp2_sep": 3, "edp2_lead": 2}
 
@@ -110,6 +111,11 @@ def build_catalog(mode: str) -> pd.DataFrame:
         cat["edp2_ndia"] = cat["name"].map(e["nDiaSources"])
         cat["edp2_lead"] = cat["name"].map(e["lead_days"])
         cat["edp2_tc"] = cat["name"].map(e["time_consistent"])
+        cat["edp2_coadd"], cat["edp2_coadd_bands"] = None, None
+        if EDP2_COADD.exists():
+            k = pd.read_parquet(EDP2_COADD).drop_duplicates("name").set_index("name")
+            cat["edp2_coadd"] = cat["name"].map(k["edp2_coadd"]).astype("boolean")
+            cat["edp2_coadd_bands"] = cat["name"].map(k["edp2_coadd_bands"]).astype("string")
     return cat.sort_values(["disc_mjd", "name"]).reset_index(drop=True)
 
 
@@ -221,6 +227,9 @@ def notes(mode: str) -> list[str]:
                     "only. Do not redistribute or post publicly (Rubin Data Policy RDO-13).")
         n.append("EDP2 match: nearest dp2.DiaObject within 2\" of the TNS position. About 6% of matches "
                  "are expected to be chance coincidences, mostly at 1-2\".")
+        n.append("EDP2 deep coadd: the TNS position lies inside a dp2.CoaddPatches patch polygon; bands are "
+                 "the ivoa.ObsCore LSST.DP2 deep_coadd bands of that patch. Being within 2.1 deg of a visit "
+                 "centre (this catalogue) is a wider area than the deep-coadd footprint.")
     return n
 
 

@@ -237,6 +237,8 @@
     var d = [], team = S.isPrivate, offer = !S.isPrivate && !!S.meta.team_access;
     var ek = S.srcKeys.filter(function (k) { return /^edp2_/.test(k); });
     if (U.has('alert_ids')) d.push({ id: 'rid', label: 'Rubin alert diaObjectId', test: function (i) { return X.hasRid(i, 'alert'); }, p: [['rid', 'yes']] });
+    if (team && U.has('edp2_coadd')) d.push({ id: 'coadd', label: 'EDP2 coadd footprint', priv: true, test: function (i) { return U.V(i, 'edp2_coadd') === true; }, p: [['ecov', '1']] });
+    else if (offer) d.push({ id: 'coadd', label: 'EDP2 coadd footprint', locked: true });
     if (team && U.has('edp2_id')) d.push({ id: 'dp2', label: 'DP2 diaObjectId', priv: true, test: X.F.isMatched, p: [['em', '1']] });
     else if (offer) d.push({ id: 'dp2', label: 'DP2 diaObjectId', locked: true });
     if (team && ek.length) {

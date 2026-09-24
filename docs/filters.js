@@ -128,6 +128,13 @@
       addCat({ id: 'em', label: 'DP2 diaObjectId (EDP2 match)', private: true, open: true,
         values: [{ v: '1', label: 'Matched (≤ ' + S.matchR + '″)' }, { v: '0', label: 'Not matched' }],
         get: function (i) { return F.isMatched(i) ? '1' : '0'; } });
+      if (C.edp2_coadd !== undefined) {
+        var jco = C.edp2_coadd;
+        addCat({ id: 'ecov', label: 'EDP2 deep coadd', private: true, open: true,
+          values: [{ v: '1', label: 'Inside the coadd footprint' }, { v: '0', label: 'Outside' }],
+          get: function (i) { return rows[i][jco] === true ? '1' : '0'; },
+          note: 'The position falls inside a DP2 deep-coadd patch (dp2.CoaddPatches).' });
+      }
       var jtc = C.edp2_tc;
       addCat({ id: 'etc', label: 'EDP2 time-consistent', private: true, open: false,
         values: [{ v: '1', label: 'Time-consistent' }, { v: '0', label: 'No / not applicable' }],

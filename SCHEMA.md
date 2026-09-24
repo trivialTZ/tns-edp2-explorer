@@ -132,8 +132,10 @@ merges it into catalogue columns at load (null where an object has none).
 | shard | lightcurve shard index |
 
 Private builds add `n_edp2_dia, n_edp2_fp, t0_edp2_dia, t1_edp2_dia,
-edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc` (the unlocked public site
-adds the same columns from section 3). `edp2_id` is the DP2 catalogue
+edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc, edp2_coadd, edp2_coadd_bands` (the unlocked
+public site adds the same columns from section 3). `edp2_coadd` is true when the TNS position lies
+inside a dp2.CoaddPatches patch polygon and `edp2_coadd_bands` lists that patch's ObsCore
+deep_coadd bands in ugrizy order (build/fetch_edp2_coadd.py). `edp2_id` is the DP2 catalogue
 diaObjectId, a different ID space from `alert_ids`. IDs are always strings:
 ~1e17 integers do not survive float64 or JS Number.
 
