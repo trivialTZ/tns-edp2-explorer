@@ -6,7 +6,7 @@ data/tnsx_eval_*, tools/run_fetch.py + tools/run_score.sh): per survey,
 
   gold/snapshots_<sv>.parquet            one row per object id and detection number (<= 20)
   silver_<sv>/broker_events.parquet      native broker outputs (class names, probabilities)
-  scores/predictions_tnsx_<sv>_v11.parquet   metaDEBASS fusion_v11 probabilities per row
+  scores/predictions_tnsx_<sv>_v11scc.parquet   metaDEBASS fusion_v11 (SCC-trained stack) probabilities per row
 
 Every input is public: Rubin alert-stream and ZTF alert data, broker outputs, TNS types.
 
@@ -47,6 +47,9 @@ OUT = C.NORM / "classifiers.parquet"
 OBJ = C.NORM / "classifier_objects.parquet"
 CARD = C.NORM / "classifier_scorecard.json"
 # metaDEBASS v11 train/cal splits: objects in them are in-sample for the model.
+# metaDEBASS predictions scored with the SCC-trained v11 stack (rubin_hackathon/models_scc_v11: followup, trust,
+# anchor_blend, conformal). models/*_v11 in that repo is a local smoke-scale build and must not be used here.
+MDB_TAG = "v11scc"
 MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v11.json", C.HACK / "data/gold/split_fusion_v11.local.json",
               C.HACK / "data/gold/split_fusion_v11_scc.json"]
 CHECKPOINTS = [3, 5, 10]
@@ -140,7 +143,7 @@ def static_labels(silver: pd.DataFrame) -> dict[tuple[str, str], tuple[str, floa
 
 def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple[list[dict], list[dict]]:
     gold_p = EVAL / f"gold/snapshots_{sv.lower()}.parquet"
-    pred_p = EVAL / f"scores/predictions_tnsx_{sv.lower()}_v11.parquet"
+    pred_p = EVAL / f"scores/predictions_tnsx_{sv.lower()}_{MDB_TAG}.parquet"
     silv_p = EVAL / f"silver_{sv.lower()}/broker_events.parquet"
     if not (gold_p.exists() and pred_p.exists()):
         print(f"  {sv}: no metaDEBASS run in {EVAL} (skipped)")
@@ -163,7 +166,8 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
         for d in og.to_dict("records"):
             base = {"name": name, "survey": sv, "object_id": oid, "n_det": int(d["n_det"]),
                     "mjd": round(float(d["alert_jd"]) - JD_MJD, 5) if pd.notna(d["alert_jd"]) else math.nan}
-            # metaDEBASS: confidences only, no call (v11 has no LSST Ia head, so no P(Ia) for Rubin IDs)
+            # metaDEBASS: confidences only, no call. No P(Ia) for Rubin IDs: v11 applies its ZTF-trained Ia head there,
+            # and on the live LSST benchmark that head does not separate SN Ia from other SNe (AUC ~0.5).
             pi, pn, po = _f(d.get("p_snia")), _f(d.get("p_nonia")), _f(d.get("p_other"))
             if np.isfinite([pi, pn, po]).all():
                 lab = f"P(SN) {pi + pn:.2f}" + (f" · P(Ia) {pi:.2f}" if sv == "ZTF" else "")
