@@ -3,13 +3,15 @@
 
     python build/assemble.py --mode public                  # -> docs/data/ (committed, GitHub Pages)
     python build/assemble.py --mode public --encrypt-edp2   # + docs/data/edp2/ (ciphertext only)
+    python build/assemble.py --mode public --encrypt-edp2 --rotate   # same, with a new salt/key
     python build/assemble.py --mode private                 # -> PRIVATE/site/ (full copy, EDP2 included)
 
 Public mode refuses to emit private sources or columns in plaintext. Without
 --encrypt-edp2 it never reads anything under PRIVATE and removes docs/data/edp2/.
 With --encrypt-edp2 it also reads the private EDP2 inputs and writes them only as
 AES-256-GCM ciphertext (build/crypto_layer.py, SCHEMA.md section 3), keyed by the
-TNSX_SITE_PASSWORD team password, then self-checks the result. Private mode
+TNSX_SITE_PASSWORD team password, then self-checks the result. The key and every
+unchanged file are kept while the password is unchanged; --rotate forces a new key. Private mode
 refuses to write inside this repo.
 """
 from __future__ import annotations
@@ -216,7 +218,7 @@ def shard_payloads(ph: pd.DataFrame, cat: pd.DataFrame) -> dict[int, dict]:
     return out
 
 
-def edp2_layer(cat: pd.DataFrame, built: str) -> tuple[dict, dict[int, dict], set[str]]:
+def edp2_layer(cat: pd.DataFrame) -> tuple[dict, dict[int, dict], set[str]]:
     """Plaintext of the encrypted team-access layer, aligned with the public catalogue.
 
     Returns (catalog payload, {shard: {name: {edp2_dia|edp2_fp: LC}}}, diaObjectIds for the
@@ -236,9 +238,8 @@ def edp2_layer(cat: pd.DataFrame, built: str) -> tuple[dict, dict[int, dict], se
     sources = [s for s in C.PRIVATE_SOURCES if s in set(ph["source"])]
     add_source_columns(e, ph, sources)
     cols = [c for c in e.columns if c != "name"]
-    payload = {
+    payload = {                    # no timestamp: unchanged data must give an unchanged plaintext
         "v": 1,
-        "built": built,
         "names": e["name"].tolist(),
         "cols": cols,
         "rows": table_rows(e, cols),
@@ -266,9 +267,14 @@ def main():
     ap.add_argument("--encrypt-edp2", action="store_true",
                     help="public mode: also write the EDP2 layer as AES-GCM ciphertext under data/edp2/, "
                          "keyed by TNSX_SITE_PASSWORD from the rubin_hackathon .env")
+    ap.add_argument("--rotate", action="store_true",
+                    help="with --encrypt-edp2: draw a new salt and re-encrypt every file. A changed "
+                         "TNSX_SITE_PASSWORD does this automatically; --rotate forces it")
     a = ap.parse_args()
     if a.encrypt_edp2 and a.mode != "public":
         sys.exit("--encrypt-edp2 applies to --mode public only")
+    if a.rotate and not a.encrypt_edp2:
+        sys.exit("--rotate needs --encrypt-edp2")
     password = None
     if a.encrypt_edp2:
         import crypto_layer as CL
@@ -341,13 +347,16 @@ def main():
             shutil.rmtree(enc_dir)
             print(f"[public] removed {enc_dir} (no --encrypt-edp2)")
         return
-    plain, enc_shards, ids = edp2_layer(cat, meta["built"])
+    plain, enc_shards, ids = edp2_layer(cat)
     try:
-        n = CL.write_layer(data, password, plain, enc_shards, n_lc, ids)
+        n, info = CL.write_layer(data, password, plain, enc_shards, n_lc, ids, rotate=a.rotate)
     except CL.LayerError as e:
         sys.exit(f"refusing: encrypted EDP2 layer not written: {e}")
-    print(f"[public] wrote {enc_dir}: {n_lc + 2} files, {n / 1e6:.1f} MB ciphertext; "
-          "self-check passed (decrypts to the source, wrong password fails, no plaintext leaks)")
+    key = "key kept (same salt)" if info["key"].startswith("kept") else f"NEW key and salt ({info['reason']})"
+    print(f"[public] wrote {enc_dir}: {n_lc + 2} files, {n / 1e6:.1f} MB ciphertext; {key}; "
+          f"{info['reused']} unchanged, {info['sealed']} re-encrypted with fresh IVs")
+    print("[public] self-check passed: decrypts to the source, wrong password fails, no plaintext "
+          "leaks, and a no-change rebuild leaves data/edp2/ byte-identical")
 
 
 if __name__ == "__main__":

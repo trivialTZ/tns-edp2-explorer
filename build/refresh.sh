@@ -1,7 +1,8 @@
 #!/bin/sh
 # Re-normalize cached fetches, rebuild both sites, and publish the public one.
 # The public site gets the EDP2 team-access layer as ciphertext only (docs/data/edp2/,
-# keyed by TNSX_SITE_PASSWORD); every run draws a new salt, so stored browser keys expire.
+# keyed by TNSX_SITE_PASSWORD). The key and unchanged files are kept while the password
+# is unchanged, so only changed files are committed; add --rotate for a new key.
 # The pre-commit hook re-runs check_public.py before anything is committed.
 set -e
 cd "$(dirname "$0")/.."

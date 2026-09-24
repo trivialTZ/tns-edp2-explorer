@@ -145,9 +145,10 @@ Crypto:
 
 - key = PBKDF2-HMAC-SHA256(password, salt, iter, 32 bytes). The password is
   `TNSX_SITE_PASSWORD` from the rubin_hackathon `.env`, trimmed, Unicode NFC,
-  UTF-8. `salt` is 16 random bytes, new on every build; `iter` is at least
-  600,000.
-- Each blob is AES-256-GCM with a fresh 12-byte `iv`. `ct` is the ciphertext
+  UTF-8. `salt` is 16 random bytes (see "Key lifetime and rotation"); `iter` is
+  at least 600,000.
+- Each blob is AES-256-GCM with a random 12-byte `iv` that is never used for a
+  second plaintext under the same key. `ct` is the ciphertext
   with the 16-byte tag appended (the WebCrypto layout). The additional data is
   the ASCII string `tnsx-edp2/v1/<name>`, with `name` being `check`, `catalog`
   or `lc-NNN`, so a blob cannot be passed off under another name.
@@ -156,10 +157,29 @@ Crypto:
 - Every other plaintext is UTF-8 JSON followed by spaces up to a multiple of
   4096 bytes.
 
-Plaintexts:
+Key lifetime and rotation:
+
+- While the password still opens the existing `keyinfo.js` check blob, a build
+  keeps that salt, key and `keyinfo.js`. A file whose padded plaintext is
+  unchanged keeps its existing bytes (same `iv` and `ct`), so a no-change
+  rebuild leaves `docs/data/edp2/` byte-identical, which the build checks
+  before it finishes. A changed plaintext is sealed again with a new random
+  `iv` that is not in the key's used-IV list.
+- A new password, or `assemble.py --rotate`, draws a new salt and re-encrypts
+  every file. Stored browser keys then no longer match `keyinfo.salt` and are
+  forgotten.
+- Build state lives outside the repo in `PRIVATE/crypto_state.json` (mode
+  600): `{"v":1, "salt", "iter", "files": {file: {"sha256": padded-plaintext
+  hash, "file_sha256": ciphertext-file hash}}, "ivs": [every IV used under
+  the key]}`. A file is reused only when both hashes match. If the state is
+  missing or its salt differs from `keyinfo.js`, the build decrypts the
+  existing files to rebuild the manifest. Builds to another `--out` keep a
+  separate `crypto_state.<hash>.json`.
+
+Plaintexts (no timestamps, so unchanged data gives an unchanged plaintext):
 
 ```
-catalog  {"v":1, "built": ISO timestamp,
+catalog  {"v":1,
           "names":[name, ...],                     // public catalogue order
           "cols":["edp2_id","edp2_sep","edp2_ndia","edp2_lead","edp2_tc",
                   "n_edp2_dia","t0_edp2_dia","t1_edp2_dia","n_edp2_fp",...],

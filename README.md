@@ -38,14 +38,29 @@ data-rights holders unlock in the browser with a shared team password.
 - **Build.** `assemble.py --mode public --encrypt-edp2` reads the private EDP2
   inputs and writes only `docs/data/edp2/`: `keyinfo.js`, `catalog.js` and one
   `NNN.js` per lightcurve shard, including empty ones. Each is AES-256-GCM
-  ciphertext with a fresh IV, under a key derived from `TNSX_SITE_PASSWORD`
-  (in `rubin_hackathon/.env`) by PBKDF2-HMAC-SHA256 with 600,000 iterations
-  and a new random salt on every build. Plaintexts are padded to multiples of
-  4 KB. The build then decrypts everything again and compares it with the
-  source, checks that a wrong password fails, and scans the whole site for
-  plaintext IDs and the password. Without `--encrypt-edp2`, `docs/data/edp2/`
-  is deleted. `check_public.py` accepts files in that folder only if they have
-  the exact ciphertext shapes (SCHEMA.md section 3).
+  ciphertext under a key derived from `TNSX_SITE_PASSWORD` (in
+  `rubin_hackathon/.env`) by PBKDF2-HMAC-SHA256 with 600,000 iterations and a
+  random salt. Plaintexts are padded to multiples of 4 KB. The build then
+  decrypts everything again and compares it with the source, checks that a
+  wrong password fails, scans the whole site for plaintext IDs and the
+  password, and checks that an immediate rebuild would change nothing. Without
+  `--encrypt-edp2`, `docs/data/edp2/` is deleted. `check_public.py` accepts
+  files in that folder only if they have the exact ciphertext shapes (SCHEMA.md
+  section 3).
+- **Stable key.** While the password is unchanged the salt, and so the key, is
+  kept, and every file whose data did not change stays byte-identical. A data
+  refresh therefore commits only the files that changed, and stored browser
+  keys keep working. A changed file always gets a new random IV that was never
+  used under that key. The salt, a manifest of plaintext and ciphertext
+  SHA-256 per file, and the used IVs live in `PRIVATE/crypto_state.json`
+  (mode 600, never in the repo). If that file is lost, the build rebuilds it by
+  decrypting the committed files. `build/test_crypto_layer.py` tests these
+  rules with a throwaway password.
+- **Rotation.** Change `TNSX_SITE_PASSWORD` and rebuild: the old password no
+  longer opens `keyinfo.js`, so the build draws a new salt and re-encrypts
+  every file. `assemble.py --mode public --encrypt-edp2 --rotate` does the same
+  without a password change. Either way every stored browser key stops working,
+  and holders must unlock again.
 - **Browser.** "Team access" in the top bar asks for the password. WebCrypto
   derives the key and checks it against a known blob, then stores the raw key
   bytes with the build's salt in `sessionStorage`, or in `localStorage` when
@@ -62,11 +77,11 @@ What this does and does not protect:
 - It is only as strong as the password. Anyone can download the ciphertext and
   try passwords offline; PBKDF2 slows each guess but cannot save a short or
   reused password. Use a long random one.
-- Ciphertext stays in public git history for good. Rotating means setting a
-  new `TNSX_SITE_PASSWORD` and rebuilding (each build draws a new salt, which
-  also logs out every stored key). Files committed under the old password stay
-  readable to anyone who has it, so a leaked password exposes everything
-  encrypted with it, and rotation protects only later builds.
+- Ciphertext stays in public git history for good. Rotation (above) protects
+  only later builds: files committed under the old password stay readable to
+  anyone who has it, so a leaked password exposes everything ever encrypted
+  with it. Because the key now stays the same across refreshes, that means
+  every build since the last rotation.
 - The password goes only to Rubin data-rights holders. Never put it in this
   repo, an issue, a commit message or a channel with anyone else. Everyone who
   unlocks is bound by the Rubin Data Policy, as for the private build.
@@ -75,8 +90,9 @@ What this does and does not protect:
 - Without the password you still see that the layer exists, the number of
   shards, and each file's size rounded up to 4 KB, a coarse hint of how much
   EDP2 photometry each block of 100 transients has.
-- Every rebuild re-encrypts all files, so each data refresh adds about 10 MB
-  of ciphertext to git history.
+- A refresh adds only the files whose EDP2 data changed to git history; a
+  rotation re-encrypts all of them (about 10 MB). Git also shows which files
+  changed between commits, a coarse hint of where EDP2 data was updated.
 
 ## Rebuild
 
@@ -86,7 +102,7 @@ $PY build/fetch_ztf.py          # ALeRCE ZTF      -> cache/norm/ztf.parquet
 $PY build/fetch_tns_phot.py     # TNS API         -> cache/norm/tns.parquet, tns_spectra.parquet
 $PY build/fetch_alerts.py       # Fink LSST       -> cache/norm/lsst_alert*.parquet
 $PY build/fetch_edp2.py         # RSP TAP (dp2)   -> PRIVATE/norm/edp2*.parquet
-$PY build/assemble.py --mode public --encrypt-edp2   # -> docs/data/ (+ ciphertext in docs/data/edp2/)
+$PY build/assemble.py --mode public --encrypt-edp2   # -> docs/data/ (+ ciphertext in docs/data/edp2/; add --rotate for a new key)
 $PY build/assemble.py --mode private                 # -> PRIVATE/site/
 python3 build/check_public.py docs                   # and build/test_check_public.py for the guard itself
 ```

@@ -14,9 +14,17 @@ Format (SCHEMA.md section 3; docs/team.js is the reader):
     catalog.js  TNSX.onEnc("catalog",{"iv":b64,"ct":b64})
     NNN.js      TNSX.onEnc("lc-NNN",{"iv":b64,"ct":b64})
 
-A new random salt is drawn on every build and every blob gets a fresh 12-byte IV.
 Plaintexts are UTF-8 JSON padded with trailing spaces to a multiple of 4096 bytes;
 the check blob holds CHECK_TEXT so a browser can verify a password quickly.
+
+Key stability. While the password is unchanged the salt (and so the key) is kept,
+and a file whose padded plaintext is unchanged is left byte-identical, so a data
+refresh only rewrites what changed and stored browser keys stay valid. A private
+state file under common.PRIVATE (never in the repo) records the salt, a manifest of
+plaintext SHA-256 -> ciphertext-file SHA-256 per file, and every IV used under the
+key. A changed plaintext is always sealed with a fresh random IV that has never been
+used under the key. A new password, or rotate=True (assemble.py --rotate), draws a
+new salt and re-encrypts everything.
 """
 from __future__ import annotations
 
@@ -42,6 +50,7 @@ CHECK_TEXT = "tnsx-edp2 key check v1"     # docs/team.js compares against the sa
 AAD_PREFIX = "tnsx-edp2/v1/"
 MIN_PASSWORD_LEN = 12
 PAD = CP.PAD_BYTES
+STATE_VERSION = 1
 
 
 class LayerError(RuntimeError):
@@ -67,13 +76,22 @@ def b64(b: bytes) -> str:
     return base64.b64encode(b).decode("ascii")
 
 
+def sha256(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
 def pad_json(obj) -> bytes:
     raw = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
     return raw + b" " * ((-len(raw)) % PAD)
 
 
-def seal(key: bytes, name: str, plaintext: bytes) -> dict:
-    iv = os.urandom(CP.IV_BYTES)
+def seal(key: bytes, name: str, plaintext: bytes, used_ivs: set[str]) -> dict:
+    """Encrypt with a fresh random IV never used under this key (recorded in used_ivs)."""
+    while True:
+        iv = os.urandom(CP.IV_BYTES)
+        if b64(iv) not in used_ivs:
+            break
+    used_ivs.add(b64(iv))
     ct = AESGCM(key).encrypt(iv, plaintext, (AAD_PREFIX + name).encode("ascii"))
     return {"iv": b64(iv), "ct": b64(ct)}
 
@@ -95,24 +113,131 @@ def _roundtrip(obj):
     return json.loads(json.dumps(obj, ensure_ascii=False, allow_nan=False))
 
 
+# ------------------------------------------------------------------ private state (salt, manifest, IVs)
+def state_path(site: Path) -> Path:
+    """PRIVATE/crypto_state.json for docs/; a separate file for any other --out site."""
+    site = site.resolve()
+    if site == C.SITE.resolve():
+        return C.PRIVATE / "crypto_state.json"
+    return C.PRIVATE / f"crypto_state.{sha256(str(site).encode())[:12]}.json"
+
+
+def _load_state(path: Path) -> dict | None:
+    try:
+        st = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    ok = (isinstance(st, dict) and st.get("v") == STATE_VERSION and isinstance(st.get("salt"), str)
+          and isinstance(st.get("files"), dict) and isinstance(st.get("ivs"), list))
+    return st if ok else None
+
+
+def _save_state(path: Path, st: dict) -> None:
+    if path.resolve().is_relative_to(C.REPO.resolve()):
+        raise LayerError("refusing to write the crypto state inside the public repo")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(st, fh, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def _plan(final: Path, password: str, plain: dict[str, tuple[str, bytes]], state: dict | None,
+          rotate: bool) -> tuple[dict[str, str], dict, dict]:
+    """Decide the key and every file's text. Returns (files, new_state, info).
+
+    The key is kept when the password still opens the existing keyinfo.js check blob and
+    no rotation is asked for. The manifest comes from the state file when its salt matches
+    the existing keyinfo.js; otherwise (state lost or out of date) it is rebuilt by
+    decrypting the existing files. A file is reused byte-identically only when its padded
+    plaintext hash and its ciphertext-file hash both match; anything else gets a new IV.
+    """
+    info = {"key": "new", "reason": "", "reused": 0, "sealed": 0}
+    key = salt = keyinfo_txt = None
+    manifest: dict[str, dict] = {}
+    ivs: set[str] = set()
+    kf = final / "keyinfo.js"
+    if rotate:
+        info["reason"] = "rotation requested"
+    elif not kf.is_file():
+        info["reason"] = "no previous layer"
+    else:
+        try:
+            txt = kf.read_text()
+            ki = CP.parse_keyinfo(txt)
+            if ki["iter"] != ITERATIONS:
+                raise ValueError("iteration count changed")
+            k = derive_key(password, ki["salt"], ki["iter"])
+            if unseal(k, "check", ki["iv"], ki["ct"]) != CHECK_TEXT.encode("utf-8"):
+                raise ValueError("unexpected check plaintext")
+            key, salt, keyinfo_txt = k, ki["salt"], txt
+            ivs.add(b64(ki["iv"]))
+            for fn in plain:                      # IVs already on disk under this key are taken
+                try:
+                    ivs.add(b64(CP.parse_enc((final / fn).read_text())[1]))
+                except (OSError, ValueError):
+                    pass
+            if state and state["salt"] == ki["salt_b64"]:
+                manifest, info["key"] = dict(state["files"]), "kept"
+                ivs.update(state["ivs"])
+            else:
+                info["key"] = "kept (manifest rebuilt from the existing files)"
+                for fn, (name, _) in plain.items():
+                    f = final / fn
+                    try:
+                        raw = f.read_bytes()
+                        _, iv, ct = CP.parse_enc(raw.decode("ascii"))
+                        manifest[fn] = {"sha256": sha256(unseal(key, name, iv, ct)), "file_sha256": sha256(raw)}
+                        ivs.add(b64(iv))
+                    except (OSError, ValueError, InvalidTag):
+                        continue
+        except InvalidTag:
+            info["reason"] = "password changed"
+        except (OSError, ValueError) as e:
+            info["reason"] = f"previous keyinfo.js unusable ({e})"
+    if key is None:
+        salt = os.urandom(CP.SALT_BYTES)
+        key = derive_key(password, salt)
+        keyinfo_txt = keyinfo_js(salt, ITERATIONS, seal(key, "check", CHECK_TEXT.encode("utf-8"), ivs))
+    files = {"keyinfo.js": keyinfo_txt}
+    new_manifest = {}
+    for fn, (name, pt) in plain.items():
+        h, old, f = sha256(pt), manifest.get(fn), final / fn
+        txt = None
+        if old and old.get("sha256") == h and f.is_file():
+            raw = f.read_bytes()
+            if sha256(raw) == old.get("file_sha256"):
+                txt = raw.decode("ascii")
+                info["reused"] += 1
+        if txt is None:
+            txt = enc_js(name, seal(key, name, pt, ivs))
+            info["sealed"] += 1
+        files[fn] = txt
+        new_manifest[fn] = {"sha256": h, "file_sha256": sha256(txt.encode("ascii"))}
+    new_state = {"v": STATE_VERSION, "salt": b64(salt), "iter": ITERATIONS, "files": new_manifest, "ivs": sorted(ivs)}
+    return files, new_state, info
+
+
 def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, dict], n_shards: int,
-                secret_ids: set[str]) -> int:
+                secret_ids: set[str], rotate: bool = False, state_file: Path | None = None) -> tuple[int, dict]:
     """Encrypt `catalog` and one blob per shard 0..n_shards-1 into data_dir/edp2/.
 
-    Written to a scratch directory under cache/ first, self-checked, then moved into
-    place; on any failure nothing is left under data_dir/edp2. Returns bytes written.
+    Files are staged in a scratch directory under cache/, self-checked, then moved into
+    place; on any failure nothing new is left under data_dir/edp2 and the state file is
+    untouched. Returns (bytes written, plan info).
     """
     final = data_dir / CP.ENC_DIR
+    state_file = state_file or state_path(data_dir.parent)
+    if state_file.resolve().is_relative_to(C.REPO.resolve()):
+        raise LayerError("refusing to keep the crypto state inside the public repo")
+    plain = {"catalog.js": ("catalog", pad_json(catalog))}
+    for sh in range(n_shards):
+        plain[f"{sh:03d}.js"] = (f"lc-{sh:03d}", pad_json(shards.get(sh, {})))
+    files, new_state, info = _plan(final, password, plain, _load_state(state_file), rotate)
     C.CACHE.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="edp2_layer_", dir=C.CACHE))
     try:
-        salt = os.urandom(CP.SALT_BYTES)
-        key = derive_key(password, salt)
-        files = {"keyinfo.js": keyinfo_js(salt, ITERATIONS, seal(key, "check", CHECK_TEXT.encode("utf-8"))),
-                 "catalog.js": enc_js("catalog", seal(key, "catalog", pad_json(catalog)))}
-        for sh in range(n_shards):
-            name = f"lc-{sh:03d}"
-            files[f"{sh:03d}.js"] = enc_js(name, seal(key, name, pad_json(shards.get(sh, {}))))
         size = 0
         for fn, txt in files.items():
             (tmp / fn).write_text(txt)
@@ -130,7 +255,13 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
     except BaseException:
         shutil.rmtree(final, ignore_errors=True)
         raise
-    return size
+    _save_state(state_file, new_state)
+    # Stability: an immediate rebuild from the same inputs must leave every file byte-identical
+    # (a zero diff under data/edp2/), so a no-change refresh commits nothing here.
+    again, _, info2 = _plan(final, password, plain, _load_state(state_file), rotate=False)
+    if info2["sealed"] or info2["key"] != "kept" or any((final / fn).read_text() != t for fn, t in again.items()):
+        raise LayerError("self-check: a no-change rebuild would rewrite files under data/edp2/")
+    return size, info
 
 
 def self_check(d: Path, password: str, catalog: dict, shards: dict[int, dict], n_shards: int,
