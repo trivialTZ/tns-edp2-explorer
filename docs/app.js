@@ -28,11 +28,11 @@
     FAMILIES: ['u', 'g', 'r', 'i', 'z', 'y', 'o', 'c', 'w', 'L', 'V', 'B', 'R', 'I', 'Clear', 'other'],
     FAM_COLORS: {
       light: { u: '#1f6fe0', g: '#45b35f', r: '#b3261a', i: '#b88300', z: '#d23d98', y: '#8a3b2c',
-        o: '#e0701a', c: '#1799a8', w: '#6f6a60', L: '#9a8c74', V: '#6b8e23', B: '#2340a0', R: '#d9534f',
-        I: '#7a5c00', Clear: '#3f3d38', other: '#a8a498' },
+        o: '#e0701a', c: '#1799a8', w: '#656c72', L: '#9a8c74', V: '#6b8e23', B: '#2340a0', R: '#d9534f',
+        I: '#7a5c00', Clear: '#3b4145', other: '#a0a6ab' },
       dark: { u: '#4a8cf0', g: '#38aa63', r: '#c23624', i: '#b39015', z: '#d45aa6', y: '#bb6533',
-        o: '#e07a2a', c: '#2bb3c0', w: '#a39d90', L: '#bfae8f', V: '#93b340', B: '#6f86e0', R: '#e8706b',
-        I: '#d9b550', Clear: '#e0ddd4', other: '#6d6a62' }
+        o: '#e07a2a', c: '#2bb3c0', w: '#9aa2a8', L: '#bfae8f', V: '#93b340', B: '#6f86e0', R: '#e8706b',
+        I: '#d9b550', Clear: '#dde2e5', other: '#666d72' }
     },
     // Marker per source: filled = detections, open = forced photometry of the same survey.
     SRC_SYMBOL: { edp2_dia: 'circle', edp2_fp: 'circle-open', lsst_alert: 'diamond', lsst_alert_fp: 'diamond-open',

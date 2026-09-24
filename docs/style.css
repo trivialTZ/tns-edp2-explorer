@@ -1,21 +1,21 @@
 /* TNS x EDP2 Explorer — design system.
-   Warm paper and ink, with Rubin Observatory teal (rubinobservatory.org palette) as the main
+   Cool Rubin greys (rubinobservatory.org neutrals) with Rubin Observatory teal (rubinobservatory.org palette) as the main
    colour: primary actions, active navigation, key numbers, links, focus and the sky map.
    Band colours are reserved for data; the brand teal is never drawn inside a lightcurve plot. */
 
 :root {
-  --page: #FAF9F5;
+  --page: #F4F6F7;            /* cool grey, close to Rubin neutral-10 (#F5F5F5) */
   --card: #FFFFFF;
-  --fill: #F2F0E9;            /* quiet fills: tracks, inputs, hover */
-  --fill-2: #E9E6DC;
-  --line: rgba(31, 28, 18, 0.10);
-  --line-strong: rgba(31, 28, 18, 0.18);
-  --ink: #141413;
-  --ink-2: #3D3C38;
-  --muted: #6B6A64;
-  --faint: #A8A59B;           /* decoration only, never text */
+  --fill: #EBEFF1;            /* quiet fills: tracks, inputs, hover */
+  --fill-2: #E0E4E8;          /* ~ Rubin neutral-15/20 */
+  --line: rgba(16, 34, 44, 0.10);
+  --line-strong: rgba(16, 34, 44, 0.18);
+  --ink: #12191D;
+  --ink-2: #3A4348;
+  --muted: #5B656B;           /* 5.5:1 on --page */
+  --faint: #9EA4A9;           /* decoration only, never text (Rubin neutral-40) */
   --brand: #058B8C;           /* Rubin teal-400 (the rubinobservatory.org nav band): fills and marks, no small text */
-  --accent: #117273;          /* Rubin turquoise-80 (their link colour): text and buttons, 5.4:1 on --page */
+  --accent: #117273;          /* Rubin turquoise-80 (their link colour): text and buttons, 5.3:1 on --page */
   --accent-hover: #0C4A47;    /* Rubin teal-600 (their header band) */
   --accent-ink: #FFFFFF;
   --accent-soft: rgba(5, 139, 140, 0.11);
@@ -23,16 +23,16 @@
   --private: #A3261F;
   --private-ink: #FFFFFF;
   --warn: #8A5300;            /* "diagnostic" badges: text and border only */
-  --bar: rgba(250, 249, 245, 0.72);
-  --shadow-sm: 0 1px 2px rgba(31, 28, 18, 0.04);
-  --shadow: 0 1px 2px rgba(31, 28, 18, 0.04), 0 8px 24px rgba(31, 28, 18, 0.05);
-  --shadow-lg: 0 2px 6px rgba(31, 28, 18, 0.06), 0 24px 64px rgba(31, 28, 18, 0.14);
-  --skeleton: #EFEDE6;
-  --skeleton-hi: #F7F6F1;
-  --plot-window: rgba(31, 28, 18, 0.045);
-  --plot-disc: #141413;
+  --bar: rgba(244, 246, 247, 0.76);
+  --shadow-sm: 0 1px 2px rgba(16, 34, 44, 0.05);
+  --shadow: 0 1px 2px rgba(16, 34, 44, 0.05), 0 8px 24px rgba(16, 34, 44, 0.06);
+  --shadow-lg: 0 2px 6px rgba(16, 34, 44, 0.07), 0 24px 64px rgba(16, 34, 44, 0.16);
+  --skeleton: #E8ECEE;
+  --skeleton-hi: #F3F5F6;
+  --plot-window: rgba(16, 34, 44, 0.045);
+  --plot-disc: #12191D;
   --dot-data: #058B8C;
-  --dot-none: #C9C5BA;
+  --dot-none: #C2C8CC;
 
   --font: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --serif: "Newsreader", "Source Serif 4", ui-serif, Georgia, "Times New Roman", serif;
@@ -49,26 +49,26 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --page: #0E0E0C; --card: #161614; --fill: #1F1F1C; --fill-2: #292925;
-    --line: rgba(255, 250, 235, 0.09); --line-strong: rgba(255, 250, 235, 0.17);
-    --ink: #F2F0E8; --ink-2: #D2CFC5; --muted: #A09D93; --faint: #5C5A53;
-    --brand: #00BEBF; --accent: #00BEBF; --accent-hover: #30E0E3; --accent-ink: #0E0E0C; --accent-soft: rgba(0, 190, 191, 0.14); --focus: rgba(0, 190, 191, 0.6);
-    --private: #B3342B; --bar: rgba(14, 14, 12, 0.72); --warn: #E3B35A;
-    --shadow-sm: none; --shadow: 0 1px 0 rgba(255, 250, 235, 0.03) inset; --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
-    --skeleton: #1C1C19; --skeleton-hi: #24241F;
-    --plot-window: rgba(255, 250, 235, 0.05); --plot-disc: #F2F0E8; --dot-data: #00BEBF; --dot-none: #4A4843;
+    --page: #0E1214; --card: #151A1D; --fill: #1D2327; --fill-2: #262E33;
+    --line: rgba(225, 238, 244, 0.09); --line-strong: rgba(225, 238, 244, 0.17);
+    --ink: #EDF1F3; --ink-2: #CBD3D7; --muted: #95A0A6; --faint: #56616A;
+    --brand: #00BEBF; --accent: #00BEBF; --accent-hover: #30E0E3; --accent-ink: #0E1214; --accent-soft: rgba(0, 190, 191, 0.14); --focus: rgba(0, 190, 191, 0.6);
+    --private: #B3342B; --bar: rgba(14, 18, 20, 0.74); --warn: #E3B35A;
+    --shadow-sm: none; --shadow: 0 1px 0 rgba(225, 238, 244, 0.03) inset; --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
+    --skeleton: #182023; --skeleton-hi: #20282C;
+    --plot-window: rgba(225, 238, 244, 0.05); --plot-disc: #EDF1F3; --dot-data: #00BEBF; --dot-none: #434C52;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --page: #0E0E0C; --card: #161614; --fill: #1F1F1C; --fill-2: #292925;
-  --line: rgba(255, 250, 235, 0.09); --line-strong: rgba(255, 250, 235, 0.17);
-  --ink: #F2F0E8; --ink-2: #D2CFC5; --muted: #A09D93; --faint: #5C5A53;
-  --brand: #00BEBF; --accent: #00BEBF; --accent-hover: #30E0E3; --accent-ink: #0E0E0C; --accent-soft: rgba(0, 190, 191, 0.14); --focus: rgba(0, 190, 191, 0.6);
-  --private: #B3342B; --bar: rgba(14, 14, 12, 0.72); --warn: #E3B35A;
-  --shadow-sm: none; --shadow: 0 1px 0 rgba(255, 250, 235, 0.03) inset; --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
-  --skeleton: #1C1C19; --skeleton-hi: #24241F;
-  --plot-window: rgba(255, 250, 235, 0.05); --plot-disc: #F2F0E8; --dot-data: #00BEBF; --dot-none: #4A4843;
+  --page: #0E1214; --card: #151A1D; --fill: #1D2327; --fill-2: #262E33;
+  --line: rgba(225, 238, 244, 0.09); --line-strong: rgba(225, 238, 244, 0.17);
+  --ink: #EDF1F3; --ink-2: #CBD3D7; --muted: #95A0A6; --faint: #56616A;
+  --brand: #00BEBF; --accent: #00BEBF; --accent-hover: #30E0E3; --accent-ink: #0E1214; --accent-soft: rgba(0, 190, 191, 0.14); --focus: rgba(0, 190, 191, 0.6);
+  --private: #B3342B; --bar: rgba(14, 18, 20, 0.74); --warn: #E3B35A;
+  --shadow-sm: none; --shadow: 0 1px 0 rgba(225, 238, 244, 0.03) inset; --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
+  --skeleton: #182023; --skeleton-hi: #20282C;
+  --plot-window: rgba(225, 238, 244, 0.05); --plot-disc: #EDF1F3; --dot-data: #00BEBF; --dot-none: #434C52;
   color-scheme: dark;
 }
 html.is-private { --strip-h: 28px; }
@@ -441,7 +441,7 @@ td .none { color: var(--faint); }
 .popover h4 { font-size: var(--t-xs); color: var(--muted); font-weight: 600; padding: 6px 8px 4px; text-transform: uppercase; letter-spacing: 0.06em; }
 .pop-anchor { position: relative; }
 
-.scrim { position: fixed; inset: 0; z-index: 70; background: rgba(10, 10, 8, 0.36); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); animation: fade 160ms var(--ease); }
+.scrim { position: fixed; inset: 0; z-index: 70; background: rgba(8, 14, 18, 0.38); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); animation: fade 160ms var(--ease); }
 @keyframes fade { from { opacity: 0; } }
 .sheet-foot { display: none; }
 
