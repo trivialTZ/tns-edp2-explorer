@@ -1,1 +1,1 @@
-TNSX.onShard(34,{});
+TNSX.onShard(34,{"2025wif":{"tns":{"t":[60900.874,60907.872],"b":["WFST-g","WFST-g"],"f":[null,2831.4],"e":[null,286.9],"k":[2,0],"l":[21.02,null],"x":["WFST/WFST-WFC ([Last non detection])","WFST/WFST-WFC"]}}});

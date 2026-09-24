@@ -10,6 +10,9 @@
   // ------------------------------------------------------------------ columns
   function columnDefs() {
     var c = [{ id: 'name', label: 'Name', fixed: true, always: true }];
+    // Rubin IDs right after Name; the DP2 catalogue ID only exists in private or unlocked mode.
+    if (U.has('alert_ids')) c.push({ id: 'alert_ids', label: 'Rubin diaObjectId', sub: 'alert stream', on: true, mono: true, title: K.RID_LABEL.alert });
+    if (S.isPrivate && U.has('edp2_id')) c.push({ id: 'edp2_id', label: 'Rubin DP2 diaObjectId', sub: 'DP2 catalogue', on: true, priv: true, mono: true, title: K.RID_LABEL.dp2 });
     c.push({ id: '_sep', label: 'Separation', sub: 'arcsec', num: true, cone: true, always: true });
     c.push({ id: 'type', label: 'Type', on: true }, { id: 'z', label: 'Redshift', num: true, on: true },
       { id: 'disc_mjd', label: 'Discovered', sub: 'UTC', on: true }, { id: 'disc_mag', label: 'Disc. mag', sub: 'filter', num: true, on: true },
@@ -22,12 +25,10 @@
       if (U.has('edp2_sep')) c.push({ id: 'edp2_sep', label: 'EDP2 sep.', sub: 'arcsec', num: true, on: true, priv: true });
       if (U.has('edp2_ndia')) c.push({ id: 'edp2_ndia', label: 'EDP2 nDia', num: true, on: true, priv: true });
       if (U.has('edp2_lead')) c.push({ id: 'edp2_lead', label: 'EDP2 lead', sub: 'days', num: true, on: true, priv: true });
-      if (U.has('edp2_id')) c.push({ id: 'edp2_id', label: 'EDP2 diaObjectId', on: false, priv: true, mono: true });
       if (U.has('edp2_tc')) c.push({ id: 'edp2_tc', label: 'EDP2 time-consistent', on: false, priv: true });
     }
     c.push({ id: 'ra', label: 'RA', sub: 'deg', num: true, on: false, mono: true }, { id: 'dec', label: 'Dec', sub: 'deg', num: true, on: false, mono: true },
       { id: 'internal', label: 'Internal names', on: false });
-    if (U.has('alert_ids')) c.push({ id: 'alert_ids', label: 'Rubin alert IDs', on: false, mono: true });
     c.push({ id: '_ranges', label: 'First–last MJD under counts', pseudo: true, on: false });
     return c;
   }
@@ -80,7 +81,7 @@
       (d.note ? '<p class="facet-note">' + esc(d.note) + '</p>' : '') + '</div>';
   }
   function buildRail() {
-    var h = '<div class="rail-search">' + U.icon('search', 2) + '<input type="search" class="input" id="f-q" placeholder="Name or internal name" aria-label="Filter by TNS or internal name" autocomplete="off" spellcheck="false"></div>';
+    var h = '<div class="rail-search">' + U.icon('search', 2) + '<input type="search" class="input" id="f-q" placeholder="Name, internal name or Rubin ID" aria-label="Filter by TNS name, internal name or Rubin diaObjectId (6+ digits)" autocomplete="off" spellcheck="false"></div>';
     var cat = F.byId, num = F.byId;
     h += facetShell('type', cat.type.label, catBody(cat.type), true);
     h += facetShell('pre', cat.pre.label, catBody(cat.pre), true);
@@ -211,6 +212,7 @@
       F.state.q = e.target.value.trim();
       update(true);
       var ex = S.byName.get(U.normQuery(F.state.q));
+      if (ex === undefined) ex = S.byRid.get(U.normQuery(F.state.q));
       if (ex !== undefined) X.go('#/object/' + encodeURIComponent(U.V(ex, 'name')));
       else if (F.last.result.length === 1) X.go('#/object/' + encodeURIComponent(U.V(F.last.result[0], 'name')));
     });
@@ -399,7 +401,7 @@
   // ------------------------------------------------------------------ chips
   function buildChips() {
     var st = F.state, out = [];
-    if (st.q) out.push({ k: 'Name', v: st.q, remove: function () { F.state.q = ''; } });
+    if (st.q) out.push({ k: 'Name or ID', v: st.q, remove: function () { F.state.q = ''; } });
     var c = F.last.cone;
     if (U.isNum(c.ra)) out.push({ k: 'Within ' + c.r + '″ of', v: c.ra.toFixed(4) + ', ' + U.signed(c.dec, 4), remove: function () { F.state.ra = F.state.dec = F.state.rad = ''; } });
     F.cat.forEach(function (d) {
@@ -444,6 +446,11 @@
       case 'edp2_sep': v = V(i, 'edp2_sep'); return '<td class="num">' + (U.isNum(v) ? '<span' + (v > S.matchR ? ' class="muted"' : '') + '>' + U.fx(v, 2) + '</span>' : '<span class="none">—</span>') + '</td>';
       case 'edp2_ndia': v = V(i, 'edp2_ndia'); return '<td class="num">' + (U.isNum(v) ? U.fint(v) : '<span class="none">—</span>') + '</td>';
       case 'edp2_lead': v = V(i, 'edp2_lead'); return '<td class="num">' + (U.isNum(v) ? U.fx(v, 1) : '<span class="none">—</span>') + '</td>';
+      case 'alert_ids':
+        v = String(V(i, 'alert_ids') || '').split(',').filter(Boolean);
+        return '<td class="mono"' + (v.length > 1 ? ' title="' + esc(v.join(', ')) + '"' : '') + '>' +
+          (v.length ? esc(v[0]) + (v.length > 1 ? ' <span class="muted">+' + (v.length - 1) + '</span>' : '') : '<span class="none">—</span>') + '</td>';
+      case 'edp2_id': v = V(i, 'edp2_id'); return '<td class="mono">' + (v != null && v !== '' ? esc(v) : '<span class="none">—</span>') + '</td>';
       case 'edp2_tc': v = V(i, 'edp2_tc'); return '<td>' + (v === true || v === 1 ? 'yes' : v === false || v === 0 ? 'no' : '<span class="none">—</span>') + '</td>';
       case 'ra': return '<td class="num mono">' + U.fx(V(i, 'ra'), 5) + '</td>';
       case 'dec': return '<td class="num mono">' + U.fx(V(i, 'dec'), 5) + '</td>';

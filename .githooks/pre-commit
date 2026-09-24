@@ -1,3 +1,10 @@
 #!/bin/sh
-# Refuse to commit if docs/ contains proprietary EDP2 fields.
+# Refuse to commit if docs/ contains proprietary EDP2 data in plaintext (the encrypted
+# layer in docs/data/edp2/ must match its exact ciphertext shapes), or if the guard's
+# own tests fail.
+out=$(python3 build/test_check_public.py -q 2>&1) || {
+  echo "$out" >&2
+  echo "pre-commit: build/test_check_public.py failed" >&2
+  exit 1
+}
 exec python3 build/check_public.py docs

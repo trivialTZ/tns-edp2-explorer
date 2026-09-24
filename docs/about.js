@@ -40,12 +40,17 @@
       '<p class="eyebrow">About</p><h1>A lightcurve browser for the Rubin EDP2 footprint</h1>' +
       '<p class="lede">This site gathers the ' + U.fint(S.N) + ' transients reported to the Transient Name Server between ' + esc(span) +
       ' whose positions fall inside the Rubin EDP2 visit footprint, and overlays every lightcurve we could find for them.</p>' +
-      '<p class="note">' + (S.isPrivate ? 'Private build' : 'Public build') + (built ? ', made ' + esc(built) : '') + '.</p>' +
+      '<p class="note">' + (M.team ? 'Public build with the team-access layer unlocked in this browser' : S.isPrivate ? 'Private build' : 'Public build') +
+      (built ? ', made ' + esc(built) : '') + '.</p>' +
       (M.fixture ? '<div class="callout"><strong>Synthetic fixture.</strong> Every name, position and lightcurve in this build is randomly generated for testing.</div>' : '') +
 
       '<h2>How to use it</h2>' +
       '<p><a href="#/explore">Explore</a> is a faceted browser in the style of single-cell data portals: pick values in the rail on the left, drag the range sliders, and the counts beside every other value update to show what remains. Active filters sit above the results as chips, and the whole state lives in the page URL, so a filtered list can be bookmarked or shared.</p>' +
       '<p>Each transient has its own page with the TNS record, links to other archives and the lightcurve. Search from anywhere with <span class="kbd">⌘K</span> or <span class="kbd">/</span>, and step through the current list with ← and →.</p>' +
+      '<h3>Rubin identifiers</h3>' +
+      '<p>Rubin names each difference-image object with a <span class="mono">diaObjectId</span>. The alert stream and the DP2 catalogue use separate ID spaces, so one transient has unrelated IDs in each, and this site links both to TNS by position (within ' + S.matchR + '″). ' +
+      'Search takes a full ID or any prefix of ' + K.RID_MIN_PREFIX + ' or more digits' + (S.isPrivate ? '' : ' (alert-stream IDs here' + (M.team_access ? '; DP2 catalogue IDs only with team access' : '') + ')') + ', and <span class="mono">#/object/&lt;id&gt;</span> opens the transient. ' +
+      'An <span class="mono">objectId</span> is something else: it labels a deep-coadd Object row, usually the host galaxy, not the transient.</p>' +
 
       '<h2>Photometry sources</h2>' +
       '<div class="card table-card"><div class="table-wrap"><table class="data"><thead><tr><th>Marker</th><th>Source</th><th>Survey</th><th class="num">Transients</th><th class="num">Points</th></tr></thead>' +
@@ -63,9 +68,13 @@
         '<div class="card table-card"><div class="table-wrap"><table class="data"><tbody>' + stats + '</tbody></table></div></div>' : '') +
 
       '<h2>Data policy</h2>' +
-      (S.isPrivate
+      (M.team
+        ? '<div class="callout private"><strong>' + esc(K.PRIVATE_BANNER) + '</strong><br>You unlocked the Rubin DP2 catalogue layer (DiaObject, DiaSource and forced photometry, plus match results) with the team password. ' +
+          'It is proprietary under the Rubin Data Policy: this site holds it only as ciphertext, and it was decrypted in this browser. Share it only with Rubin data-rights holders. Lock, in the top bar, forgets the key.</div>'
+        : S.isPrivate
         ? '<div class="callout private"><strong>' + esc(K.PRIVATE_BANNER) + '</strong><br>This build contains Rubin DP2 catalogue data (DiaObject, DiaSource and forced photometry, plus match results), which is proprietary under the Rubin Data Policy. Share it only with Rubin data-rights holders.</div>'
-        : '<p>This public build contains only public data: TNS reports, ZTF photometry served by ALeRCE, public Rubin alerts served by Fink, and dp2.Visit pointing metadata. Rubin DP2 catalogue photometry is proprietary under the Rubin Data Policy and is not included; the statistics above are aggregate numbers only.</p>') +
+        : '<p>This public build contains only public data: TNS reports, ZTF photometry served by ALeRCE, public Rubin alerts served by Fink, and dp2.Visit pointing metadata. Rubin DP2 catalogue photometry is proprietary under the Rubin Data Policy and is not included; the statistics above are aggregate numbers only.</p>' +
+          (M.team_access ? '<p class="note">Rubin data-rights holders can unlock an encrypted copy of that photometry with the team password, under Team access in the top bar. It is decrypted only in your browser.</p>' : '')) +
 
       '<h2>Credits</h2><ul>' +
       '<li><strong>Transient Name Server (TNS)</strong>, the IAU mechanism for reporting new transients: names, positions, discovery data, classifications, redshifts and reported photometry. Discovery and classification credit belongs to the reporting groups listed on each transient. <a href="https://www.wis-tns.org/" target="_blank" rel="noopener">wis-tns.org</a></li>' +

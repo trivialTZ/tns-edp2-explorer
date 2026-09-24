@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Assemble the site's JS data files from the normalized photometry.
 
-    python build/assemble.py --mode public    # -> docs/data/ (committed, GitHub Pages)
-    python build/assemble.py --mode private   # -> PRIVATE/site/ (full copy, EDP2 included)
+    python build/assemble.py --mode public                  # -> docs/data/ (committed, GitHub Pages)
+    python build/assemble.py --mode public --encrypt-edp2   # + docs/data/edp2/ (ciphertext only)
+    python build/assemble.py --mode private                 # -> PRIVATE/site/ (full copy, EDP2 included)
 
-Public mode never reads anything under PRIVATE and refuses to emit private
-sources or columns. Private mode refuses to write inside this repo.
+Public mode refuses to emit private sources or columns in plaintext. Without
+--encrypt-edp2 it never reads anything under PRIVATE and removes docs/data/edp2/.
+With --encrypt-edp2 it also reads the private EDP2 inputs and writes them only as
+AES-256-GCM ciphertext (build/crypto_layer.py, SCHEMA.md section 3), keyed by the
+TNSX_SITE_PASSWORD team password, then self-checks the result. Private mode
+refuses to write inside this repo.
 """
 from __future__ import annotations
 
@@ -22,7 +27,11 @@ import pandas as pd
 import common as C
 
 PUBLIC_NORM_FILES = ["ztf.parquet", "tns.parquet", "lsst_alert.parquet"]
+EDP2_NORM = C.PRIVATE_NORM / "edp2.parquet"
+EDP2_OBJECTS = C.PRIVATE_NORM / "edp2_objects.parquet"
+EDP2_COLS = ["edp2_id", "edp2_sep", "edp2_ndia", "edp2_lead", "edp2_tc"]
 CODE_SUFFIXES = {".html", ".js", ".css", ".svg", ".png", ".ico", ".txt"}
+ROUND = {"ra": 6, "dec": 6, "z": 5, "disc_mjd": 4, "disc_mag": 2, "edp2_sep": 3, "edp2_lead": 2}
 
 
 def _clean(v, nd=None):
@@ -99,7 +108,14 @@ def build_catalog(mode: str) -> pd.DataFrame:
 def load_phot(mode: str, cat: pd.DataFrame) -> pd.DataFrame:
     files = [C.NORM / f for f in PUBLIC_NORM_FILES]
     if mode == "private":
-        files.append(C.PRIVATE_NORM / "edp2.parquet")
+        files.append(EDP2_NORM)
+    ph = read_phot(files, cat)
+    if mode == "public" and ph["source"].isin(C.PRIVATE_SOURCES).any():
+        sys.exit("refusing: private sources found in public inputs")
+    return ph
+
+
+def read_phot(files: list[Path], cat: pd.DataFrame) -> pd.DataFrame:
     parts = []
     for f in files:
         if f.exists():
@@ -110,8 +126,6 @@ def load_phot(mode: str, cat: pd.DataFrame) -> pd.DataFrame:
     if not parts:
         return C.empty_norm()
     ph = pd.concat(parts, ignore_index=True)
-    if mode == "public" and ph["source"].isin(C.PRIVATE_SOURCES).any():
-        sys.exit("refusing: private sources found in public inputs")
     # Re-apply the epoch window (defence in depth) and keep catalog objects only.
     disc = cat.set_index("name")["disc_mjd"]
     d = ph["name"].map(disc)
@@ -171,6 +185,74 @@ def notes(mode: str) -> list[str]:
     return n
 
 
+def table_rows(df: pd.DataFrame, cols: list[str]) -> list[list]:
+    return [[_clean(v, ROUND.get(c) if isinstance(v, (float, np.floating)) else None)
+             for c, v in zip(cols, r)] for r in df[cols].itertuples(index=False, name=None)]
+
+
+def source_meta(ph: pd.DataFrame, sources: list[str]) -> dict:
+    return {s: {**{k: C.SOURCES[s][k] for k in ("label", "desc", "survey")},
+                "n_objects": int(ph.loc[ph["source"] == s, "name"].nunique()),
+                "n_points": int((ph["source"] == s).sum())} for s in sources}
+
+
+def add_source_columns(cat: pd.DataFrame, ph: pd.DataFrame, sources: list[str]) -> None:
+    """n_<source> (measurements, limits excluded), t0_<source>, t1_<source> per object."""
+    meas = ph[ph["kind"] != C.KIND_UL]
+    for s in sources:
+        g = meas[meas["source"] == s].groupby("name")["mjd"]
+        cat[f"n_{s}"] = cat["name"].map(g.size()).fillna(0).astype(int)
+        cat[f"t0_{s}"] = cat["name"].map(g.min())
+        cat[f"t1_{s}"] = cat["name"].map(g.max())
+
+
+def shard_payloads(ph: pd.DataFrame, cat: pd.DataFrame) -> dict[int, dict]:
+    """{shard: {name: {source: LC}}} for every shard of the catalogue (empty dict if no data)."""
+    shard_of = cat.set_index("name")["shard"]
+    ph = ph.assign(shard=ph["name"].map(shard_of))
+    out = {sh: {} for sh in range(int(cat["shard"].max()) + 1)}
+    for (sh, name, src), g in ph.groupby(["shard", "name", "source"], sort=False):
+        out[int(sh)].setdefault(name, {})[src] = encode_lc(g)
+    return out
+
+
+def edp2_layer(cat: pd.DataFrame, built: str) -> tuple[dict, dict[int, dict], set[str]]:
+    """Plaintext of the encrypted team-access layer, aligned with the public catalogue.
+
+    Returns (catalog payload, {shard: {name: {edp2_dia|edp2_fp: LC}}}, diaObjectIds for the
+    leak scan). These objects are PROPRIETARY: they may only be handed to crypto_layer.
+    """
+    for f in (EDP2_NORM, EDP2_OBJECTS):
+        if not f.exists():
+            sys.exit(f"refusing --encrypt-edp2: missing private input {f}")
+    priv = build_catalog("private").drop_duplicates("name").set_index("name")
+    e = pd.DataFrame({"name": cat["name"].to_numpy()})
+    for c in EDP2_COLS:
+        e[c] = e["name"].map(priv[c])
+    print("[edp2] photometry")
+    ph = read_phot([EDP2_NORM], cat)
+    if not ph["source"].isin(C.PRIVATE_SOURCES).all():
+        sys.exit("refusing --encrypt-edp2: edp2.parquet holds non-EDP2 sources")
+    sources = [s for s in C.PRIVATE_SOURCES if s in set(ph["source"])]
+    add_source_columns(e, ph, sources)
+    cols = [c for c in e.columns if c != "name"]
+    payload = {
+        "v": 1,
+        "built": built,
+        "names": e["name"].tolist(),
+        "cols": cols,
+        "rows": table_rows(e, cols),
+        "sources": source_meta(ph, sources),
+        "notes": notes("private"),
+        "match_radius_arcsec": C.MATCH_RADIUS_AS,
+    }
+    ids = set(pd.read_parquet(EDP2_OBJECTS, columns=["diaObjectId"])["diaObjectId"].dropna().astype(str))
+    matched = int(e["edp2_id"].notna().sum())
+    print(f"[edp2] {matched:,} objects with a DiaObject, {len(ph):,} points, "
+          f"{len(sources)} sources (encrypting; nothing is written in plaintext)")
+    return payload, shard_payloads(ph, cat), ids
+
+
 def write_js(path: Path, call: str, payload) -> int:
     txt = f"{call}{json.dumps(payload, separators=(',', ':'), allow_nan=False)});\n"
     path.write_text(txt)
@@ -181,7 +263,19 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=["public", "private"], required=True)
     ap.add_argument("--out", type=Path, help="site root (default: docs/ or PRIVATE/site)")
+    ap.add_argument("--encrypt-edp2", action="store_true",
+                    help="public mode: also write the EDP2 layer as AES-GCM ciphertext under data/edp2/, "
+                         "keyed by TNSX_SITE_PASSWORD from the rubin_hackathon .env")
     a = ap.parse_args()
+    if a.encrypt_edp2 and a.mode != "public":
+        sys.exit("--encrypt-edp2 applies to --mode public only")
+    password = None
+    if a.encrypt_edp2:
+        import crypto_layer as CL
+        try:
+            password = CL.get_password()      # a secret: never print it
+        except CL.LayerError as e:
+            sys.exit(f"refusing --encrypt-edp2: {e}")
 
     out = (a.out or (C.SITE if a.mode == "public" else C.PRIVATE_SITE)).resolve()
     if a.mode == "private" and out.is_relative_to(C.REPO.resolve()):
@@ -198,12 +292,7 @@ def main():
     ph = load_phot(a.mode, cat)
 
     sources = [s for s in C.SOURCES if s in set(ph["source"])]
-    meas = ph[ph["kind"] != C.KIND_UL]
-    for s in sources:
-        g = meas[meas["source"] == s].groupby("name")["mjd"]
-        cat[f"n_{s}"] = cat["name"].map(g.size()).fillna(0).astype(int)
-        cat[f"t0_{s}"] = cat["name"].map(g.min())
-        cat[f"t1_{s}"] = cat["name"].map(g.max())
+    add_source_columns(cat, ph, sources)
     cat["shard"] = np.arange(len(cat)) // C.SHARD_SIZE
 
     meta = {
@@ -211,20 +300,18 @@ def main():
         "built": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "n_objects": len(cat),
         "window": {"mjd_start": 60790.117, "mjd_end": 61047.155},
-        "sources": {s: {**{k: C.SOURCES[s][k] for k in ("label", "desc", "survey")},
-                        "n_objects": int(ph.loc[ph["source"] == s, "name"].nunique()),
-                        "n_points": int((ph["source"] == s).sum())} for s in sources},
+        "sources": source_meta(ph, sources),
         "stats": stats_block(),
         "notes": notes(a.mode),
     }
+    if a.encrypt_edp2:
+        meta["team_access"] = True   # the site offers the password-unlocked layer in data/edp2/
     cols = list(cat.columns)
     if a.mode == "public":
         leak = [c for c in cols if "edp2" in c] + [s for s in sources if not C.SOURCES[s]["public"]]
         if leak:
             sys.exit(f"refusing: private fields in public build: {leak}")
-    nd = {"ra": 6, "dec": 6, "z": 5, "disc_mjd": 4, "disc_mag": 2, "edp2_sep": 3, "edp2_lead": 2}
-    rows = [[_clean(v, nd.get(c) if isinstance(v, (float, np.floating)) else None)
-             for c, v in zip(cols, r)] for r in cat.itertuples(index=False, name=None)]
+    rows = table_rows(cat, cols)
 
     data = out / "data"
     if (data / "lc").exists():
@@ -237,19 +324,30 @@ def main():
              for t, b, r, d in v[["expMidptMJD", "band", "ra", "dec"]].itertuples(index=False, name=None)]
     size += write_js(data / "visits.js", "TNSX.onVisits(", {"cols": ["mjd", "band", "ra", "dec"], "rows": vrows})
 
-    shard_of = cat.set_index("name")["shard"]
-    ph["shard"] = ph["name"].map(shard_of)
-    n_lc = 0
-    for sh in range(int(cat["shard"].max()) + 1):
-        objs = {}
-        for (name, src), g in ph[ph["shard"] == sh].groupby(["name", "source"], sort=False):
-            objs.setdefault(name, {})[src] = encode_lc(g)
+    shards = shard_payloads(ph, cat)
+    for sh, objs in shards.items():
         size += write_js(data / "lc" / f"{sh:03d}.js", f"TNSX.onShard({sh},", objs)
-        n_lc += 1
+    n_lc = len(shards)
     print(f"[{a.mode}] wrote {out}/data: {len(cat):,} objects, {n_lc} shards, "
           f"{len(ph):,} points, {size / 1e6:.1f} MB")
     for s in sources:
         print(f"    {s:14s} objects {meta['sources'][s]['n_objects']:5d}  points {meta['sources'][s]['n_points']:8,d}")
+
+    if a.mode != "public":
+        return
+    enc_dir = data / "edp2"
+    if not a.encrypt_edp2:
+        if enc_dir.exists():
+            shutil.rmtree(enc_dir)
+            print(f"[public] removed {enc_dir} (no --encrypt-edp2)")
+        return
+    plain, enc_shards, ids = edp2_layer(cat, meta["built"])
+    try:
+        n = CL.write_layer(data, password, plain, enc_shards, n_lc, ids)
+    except CL.LayerError as e:
+        sys.exit(f"refusing: encrypted EDP2 layer not written: {e}")
+    print(f"[public] wrote {enc_dir}: {n_lc + 2} files, {n / 1e6:.1f} MB ciphertext; "
+          "self-check passed (decrypts to the source, wrong password fails, no plaintext leaks)")
 
 
 if __name__ == "__main__":

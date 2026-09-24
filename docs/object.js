@@ -3,7 +3,7 @@
   'use strict';
   var X = window.TNSXApp, S = X.S, U = X.U, K = X.K;
   var $ = U.$, esc = U.esc, V = U.V;
-  var LC = { srcOff: new Set(), famOff: new Set(), showUL: true, showFP: true, snCut: true, y: 'flux', x: 'mjd', ticks: true };
+  var LC = { srcOff: new Set(), famOff: new Set(), showUL: true, showFP: true, snCut: true, y: 'flux', x: 'mjd', ticks: true, merge: false };
   var O = null;       // current object's plot data
   var cur = null;     // current object index
 
@@ -21,6 +21,10 @@
     var root = document.getElementById('view-object');
     var i = S.byName.get(name);
     if (i === undefined) i = S.byName.get(U.normQuery(name));
+    if (i === undefined && S.byRid.has(String(name).trim())) {      // #/object/<Rubin diaObjectId>
+      window.location.replace('#/object/' + encodeURIComponent(V(S.byRid.get(String(name).trim()), 'name')));
+      return;
+    }
     purgePlot();
     U.hover.hide();
     if (i === undefined) {
@@ -89,6 +93,17 @@
       '<span class="coord"><span class="lbl">RA</span><span class="mono">' + U.fx(ra, 6) + '°</span>' + copyBtn(U.fx(ra, 6), 'RA in degrees') + '</span>' +
       '<span class="coord"><span class="lbl">Dec</span><span class="mono">' + U.signed(dec, 6) + '°</span>' + copyBtn((dec >= 0 ? '+' : '-') + Math.abs(dec).toFixed(6), 'Dec in degrees') + '</span>' +
       '<span class="coord"><span class="mono">' + esc(sexa) + '</span>' + copyBtn(sexa.replace('−', '-'), 'sexagesimal coordinates') + '</span></div>';
+    // Rubin diaObjectIds: alert stream (public) and, in private or unlocked mode only, the DP2 catalogue ID.
+    var rids = S.rids[i] || [];
+    if (rids.length) {
+      h += '<div class="coords rids">' + ['alert', 'dp2'].map(function (kind) {
+        var ids = rids.filter(function (x) { return x.kind === kind; });
+        if (!ids.length) return '';
+        return '<span class="coord"><span class="lbl">' + esc(K.RID_LABEL[kind]) + '</span>' + ids.map(function (x) {
+          return '<span class="mono">' + esc(x.id) + '</span>' + copyBtn(x.id, K.RID_LABEL[kind] + ' ' + x.id);
+        }).join('') + '</span>';
+      }).join('') + '</div>';
+    }
     h += '<dl class="facts">';
     h += fact('Discovered', esc(U.niceDate(disc)) + ' <span class="muted">' + esc(U.isoDateTime(disc).slice(11)) + ' UTC</span>', 'MJD ' + U.fx(disc, 4));
     h += fact('Discovery magnitude', U.isNum(V(i, 'disc_mag')) ? '<span class="tabular">' + U.fx(V(i, 'disc_mag'), 2) + '</span>' + (V(i, 'disc_filter') ? ' <span class="muted">' + esc(V(i, 'disc_filter')) + '</span>' : '') : '—');
@@ -109,7 +124,8 @@
     if (S.isPrivate) {
       var matched = X.F.isMatched(i), tc = V(i, 'edp2_tc');
       h += '<p class="private-label">' + U.icon('lock', 2).replace('<svg', '<svg width="12" height="12"') + 'Rubin DP2 · proprietary</p><dl class="facts private-facts">';
-      h += fact('EDP2 DiaObject', V(i, 'edp2_id') ? '<span class="mono">' + esc(V(i, 'edp2_id')) + '</span> ' + (matched ? '<span class="pill private">matched</span>' : '<span class="pill outline">beyond ' + S.matchR + '″</span>') : '—');
+      h += fact('EDP2 match', V(i, 'edp2_id') ? (matched ? '<span class="pill private">matched</span>' : '<span class="pill outline">beyond ' + S.matchR + '″</span>') : 'No DiaObject',
+        V(i, 'edp2_id') ? 'nearest dp2.DiaObject; its ID is in the header' : '');
       h += fact('EDP2 separation', U.isNum(V(i, 'edp2_sep')) ? U.fx(V(i, 'edp2_sep'), 3) + '″' : '—');
       h += fact('EDP2 nDiaSources', U.isNum(V(i, 'edp2_ndia')) ? U.fint(V(i, 'edp2_ndia')) : '—');
       h += fact('EDP2 lead time', U.isNum(V(i, 'edp2_lead')) ? U.fx(V(i, 'edp2_lead'), 2) + ' d' : '—', 'TNS discovery − first positive EDP2 detection');
@@ -179,8 +195,8 @@
       return '<label><input type="radio" name="' + name + '" value="' + o[0] + '"' + (o[0] === curv ? ' checked' : '') + '><span>' + esc(o[1]) + '</span></label>';
     }).join('') + '</span>';
   }
-  function toggle(id, label, on, n, disabled, hidden) {
-    return '<label class="toggle" id="' + id + '-wrap"' + (hidden ? ' hidden' : '') + '><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + (disabled ? ' disabled' : '') + '><span>' + esc(label) +
+  function toggle(id, label, on, n, disabled, hidden, title) {
+    return '<label class="toggle" id="' + id + '-wrap"' + (hidden ? ' hidden' : '') + (title ? ' title="' + esc(title) + '"' : '') + '><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + (disabled ? ' disabled' : '') + '><span>' + esc(label) +
       (n != null ? ' <span class="n">' + U.fint(n) + '</span>' : '') + '</span></label>';
   }
   function renderControls() {
@@ -198,7 +214,9 @@
         return '<label class="lchip" title="Band labels: ' + esc(Object.keys(O.famBands[f] || {}).join(', ')) + '"><input type="checkbox" data-fam="' + esc(f) + '"' + (LC.famOff.has(f) ? '' : ' checked') + '>' +
           '<span><i class="sw" style="background:' + U.famColor(f) + '"></i>' + esc(f) + ' <span class="n">' + U.fint(O.famCount[f]) + '</span></span></label>';
       }).join('') + '<button type="button" class="linkbtn" data-all="fam" style="margin-left:4px">All</button></div></div>' +
-      '<div class="lc-opts">' + toggle('opt-ul', 'Upper limits', LC.showUL, O.nUL, !O.nUL) + toggle('opt-fp', 'Forced photometry', LC.showFP, O.nFP, !O.nFP) +
+      '<div class="lc-opts">' + toggle('opt-merge', 'Merge sources', LC.merge, null, false, false,
+        'Join the detections and forced photometry of every source with one line per band, in time order') +
+      toggle('opt-ul', 'Upper limits', LC.showUL, O.nUL, !O.nUL) + toggle('opt-fp', 'Forced photometry', LC.showFP, O.nFP, !O.nFP) +
       toggle('opt-sn', 'Forced S/N ≥ 3 only', LC.snCut, null, false, LC.y !== 'mag') + toggle('opt-ticks', 'LSSTCam pointings', LC.ticks) + '</div>';
     wireControls();
   }
@@ -214,6 +232,7 @@
       else if (t.id === 'opt-fp') LC.showFP = t.checked;
       else if (t.id === 'opt-sn') LC.snCut = t.checked;
       else if (t.id === 'opt-ticks') LC.ticks = t.checked;
+      else if (t.id === 'opt-merge') LC.merge = t.checked;
       else return;
       updatePlot();
     };
@@ -304,6 +323,25 @@
       g.x.push(s.x); g.y.push(s.y); g.e.push(s.ey == null ? 0 : s.ey); g.refs.push(s);
     });
     var card = U.cssVar('--card');
+    // "Merge sources": one thin line per band family through every measured point shown (detections
+    // and forced photometry from all sources, never limits), in time order, drawn under the markers.
+    if (LC.merge) {
+      var byFam = new Map();
+      shown.forEach(function (s) {
+        if (s.lim) return;
+        var a = byFam.get(s.p.fam);
+        if (!a) byFam.set(s.p.fam, a = []);
+        a.push(s);
+      });
+      K.FAMILIES.forEach(function (fam) {
+        var a = byFam.get(fam);
+        if (!a || a.length < 2) return;
+        a.sort(function (u, v) { return u.x - v.x; });
+        traces.push({ type: 'scatter', mode: 'lines', x: a.map(function (s) { return s.x; }), y: a.map(function (s) { return s.y; }),
+          line: { color: U.famColor(fam), width: 1.1 }, opacity: 0.6, hoverinfo: 'skip', showlegend: false, cliponaxis: true });
+        refs.push([]);
+      });
+    }
     groups.forEach(function (g) {
       var col = U.famColor(g.fam), sym = O.sym[g.s] || 'circle';
       if (g.cls === 'f' && !/-open$/.test(sym)) sym += '-open';
@@ -417,6 +455,7 @@
     else left.push(U.fint(O.shown.length) + ' of ' + U.fint(O.pts.length) + ' points shown');
     if (nAbove) left.push(nAbove + ' upper limit' + (nAbove > 1 ? 's' : '') + ' above the flux range (zoom out or use magnitudes)');
     if (LC.y === 'mag') left.push('magnitudes for flux > 0 only' + (O.nLowSN ? ' (' + U.fint(O.nLowSN) + ' forced points with S/N < 3 hidden)' : ''));
+    if (LC.merge) left.push('lines join all sources per band');
     var right = '';
     if (LC.ticks) {
       if (S.visitsState === 'ready' && near) {
@@ -432,28 +471,40 @@
     el.innerHTML = '<span>' + left.join(' · ') + '</span><span>' + right + '</span>';
   }
 
-  var LC_HEADER = ['source', 'band', 'band_family', 'mjd', 'days_since_disc', 'kind', 'flux_njy', 'flux_err_njy', 'mag_ab', 'mag_err', 'lim_mag', 'note'];
+  // The CSV of the shown points is one combined table: every source in time order, with the
+  // band family and the survey (for TNS reports, the reporting telescope/instrument) on each row.
+  var LC_HEADER = ['source', 'survey', 'band', 'band_family', 'mjd', 'days_since_disc', 'kind', 'flux_njy', 'flux_err_njy', 'mag_ab', 'mag_err', 'lim_mag', 'note'];
+  function surveyOf(p) {
+    var sv = ((S.meta.sources || {})[p.s] || {}).survey || '';
+    if (sv && sv !== 'various') return sv;
+    var tel = String(p.x || '').split(' (')[0].trim();          // TNS notes start "telescope/instrument"
+    if (tel) return tel;
+    var b = String(p.b || '');
+    return b.indexOf('-') > 0 ? b.split('-')[0] : (sv || p.s);
+  }
   function lcRows() {
     return O.shown.slice().sort(function (a, b) { return a.p.t - b.p.t; }).map(function (s) {
       var p = s.p;
-      return [p.s, p.b, p.fam, p.t, +(p.t - O.disc).toFixed(5), K.KIND_LABEL[p.k], p.f, p.e,
+      return [p.s, surveyOf(p), p.b, p.fam, p.t, +(p.t - O.disc).toFixed(5), K.KIND_LABEL[p.k], p.f, p.e,
         s.mag != null ? +s.mag.toFixed(4) : null, s.magErr != null ? +s.magErr.toFixed(4) : null, s.limMag != null ? +s.limMag.toFixed(3) : null, p.x];
     });
   }
-  function downloadLc() { if (O) U.downloadCsv((V(O.i, 'prefix') || '') + O.name + '_lightcurve.csv', LC_HEADER, lcRows()); }
+  function downloadLc() {
+    if (O) U.downloadCsv((V(O.i, 'prefix') || '') + O.name + (S.isPrivate ? '_private' : '') + '_lightcurve.csv', LC_HEADER, lcRows());
+  }
   function renderPointsTable() {
     var box = $('#pts-table');
     if (!O || !box) return;
     var rows = lcRows(), MAX = 3000;
     var body = rows.slice(0, MAX).map(function (r) {
-      return '<tr><td>' + esc(U.srcShort(r[0])) + '</td><td>' + esc(r[1]) + '</td><td class="num">' + U.fx(r[3], 4) + '</td><td class="num">' + U.fx(r[4], 2) +
-        '</td><td>' + r[5] + '</td><td class="num">' + fmtFlux(r[6]) + '</td><td class="num">' + fmtFlux(r[7]) + '</td><td class="num">' +
-        (r[8] != null ? U.fx(r[8], 3) : '') + '</td><td class="num">' + (r[9] != null ? U.fx(r[9], 3) : '') + '</td><td class="num">' +
-        (r[10] != null ? U.fx(r[10], 2) : '') + '</td><td class="muted">' + esc(r[11] || '') + '</td></tr>';
+      return '<tr><td>' + esc(U.srcShort(r[0])) + '</td><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td><td class="num">' + U.fx(r[4], 4) + '</td><td class="num">' + U.fx(r[5], 2) +
+        '</td><td>' + r[6] + '</td><td class="num">' + fmtFlux(r[7]) + '</td><td class="num">' + fmtFlux(r[8]) + '</td><td class="num">' +
+        (r[9] != null ? U.fx(r[9], 3) : '') + '</td><td class="num">' + (r[10] != null ? U.fx(r[10], 3) : '') + '</td><td class="num">' +
+        (r[11] != null ? U.fx(r[11], 2) : '') + '</td><td class="muted">' + esc(r[12] || '') + '</td></tr>';
     }).join('');
-    box.innerHTML = '<div class="table-wrap"><table class="data"><thead><tr><th>Source</th><th>Band</th><th class="num">MJD</th><th class="num">Δt (d)</th>' +
+    box.innerHTML = '<div class="table-wrap"><table class="data"><thead><tr><th>Source</th><th>Survey</th><th>Band</th><th class="num">MJD</th><th class="num">Δt (d)</th>' +
       '<th>Kind</th><th class="num">Flux (nJy)</th><th class="num">± (nJy)</th><th class="num">AB mag</th><th class="num">±</th><th class="num">Limit</th><th>Note</th></tr></thead>' +
-      '<tbody>' + (body || '<tr><td colspan="11"><div class="empty">No points shown.</div></td></tr>') + '</tbody></table></div>' +
+      '<tbody>' + (body || '<tr><td colspan="12"><div class="empty">No points shown.</div></td></tr>') + '</tbody></table></div>' +
       (rows.length > MAX ? '<p class="muted" style="margin-top:8px">First ' + MAX + ' of ' + U.fint(rows.length) + ' rows; the CSV has all of them.</p>' : '');
   }
 

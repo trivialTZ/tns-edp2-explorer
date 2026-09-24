@@ -1,6 +1,7 @@
 /* TNS x EDP2 Explorer — design system.
    Monochrome interface on warm paper; colour is reserved for data (band colours)
-   and a single violet accent for links, focus and the primary action. */
+   and a single Rubin-teal accent (lsst.org) for links, focus and the primary action.
+   The accent is UI only and never drawn inside a lightcurve plot, where teal could read as a band. */
 
 :root {
   --page: #FAF9F5;
@@ -13,10 +14,11 @@
   --ink-2: #3D3C38;
   --muted: #6B6A64;
   --faint: #A8A59B;           /* decoration only, never text */
-  --accent: #6B3BD8;
+  --accent: #047A7B;          /* Rubin teal #058B8C, darkened to 4.9:1 on --page */
+  --accent-hover: #0C4A47;    /* Rubin dark teal */
   --accent-ink: #FFFFFF;
-  --accent-soft: rgba(107, 59, 216, 0.10);
-  --focus: rgba(107, 59, 216, 0.55);
+  --accent-soft: rgba(5, 139, 140, 0.10);
+  --focus: rgba(5, 139, 140, 0.55);
   --private: #A3261F;
   --private-ink: #FFFFFF;
   --bar: rgba(250, 249, 245, 0.72);
@@ -48,7 +50,7 @@
     --page: #0E0E0C; --card: #161614; --fill: #1F1F1C; --fill-2: #292925;
     --line: rgba(255, 250, 235, 0.09); --line-strong: rgba(255, 250, 235, 0.17);
     --ink: #F2F0E8; --ink-2: #D2CFC5; --muted: #A09D93; --faint: #5C5A53;
-    --accent: #B39CFF; --accent-ink: #120E1F; --accent-soft: rgba(179, 156, 255, 0.14); --focus: rgba(179, 156, 255, 0.6);
+    --accent: #00BABC; --accent-hover: #33C8CA; --accent-ink: #0E0E0C; --accent-soft: rgba(0, 186, 188, 0.14); --focus: rgba(0, 186, 188, 0.6);
     --private: #B3342B; --bar: rgba(14, 14, 12, 0.72);
     --shadow-sm: none; --shadow: 0 1px 0 rgba(255, 250, 235, 0.03) inset; --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
     --skeleton: #1C1C19; --skeleton-hi: #24241F;
@@ -60,7 +62,7 @@
   --page: #0E0E0C; --card: #161614; --fill: #1F1F1C; --fill-2: #292925;
   --line: rgba(255, 250, 235, 0.09); --line-strong: rgba(255, 250, 235, 0.17);
   --ink: #F2F0E8; --ink-2: #D2CFC5; --muted: #A09D93; --faint: #5C5A53;
-  --accent: #B39CFF; --accent-ink: #120E1F; --accent-soft: rgba(179, 156, 255, 0.14); --focus: rgba(179, 156, 255, 0.6);
+  --accent: #00BABC; --accent-hover: #33C8CA; --accent-ink: #0E0E0C; --accent-soft: rgba(0, 186, 188, 0.14); --focus: rgba(0, 186, 188, 0.6);
   --private: #B3342B; --bar: rgba(14, 14, 12, 0.72);
   --shadow-sm: none; --shadow: 0 1px 0 rgba(255, 250, 235, 0.03) inset; --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
   --skeleton: #1C1C19; --skeleton-hi: #24241F;
@@ -131,6 +133,26 @@ h1, h2, h3, h4, p { margin: 0; }
 .iconbtn:hover { background: var(--fill); }
 .iconbtn svg { width: 18px; height: 18px; }
 .mode-badge { font-size: var(--t-xs); font-weight: 600; color: var(--muted); border: 1px dashed var(--line-strong); padding: 2px 9px; border-radius: var(--r-pill); white-space: nowrap; }
+/* Team access: a quiet lock button, a small password dialog and a notice toast (team.js). */
+.teambtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border-radius: var(--r-pill); border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: color var(--dur) var(--ease), background var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.teambtn:hover { color: var(--ink); background: var(--fill); border-color: var(--line-strong); }
+.teambtn svg { width: 15px; height: 15px; flex: none; }
+.team-dlg { position: fixed; z-index: 80; left: 50%; top: 14vh; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 28vh); overflow: auto; padding: 24px; box-shadow: var(--shadow-lg); animation: pop 180ms var(--ease); }
+.team-head { display: flex; align-items: center; gap: 10px; }
+.team-head svg { width: 20px; height: 20px; color: var(--muted); flex: none; }
+.team-head h2 { font: 400 26px/1.15 var(--serif); letter-spacing: -0.02em; }
+.team-text { margin: 12px 0 20px; color: var(--ink-2); line-height: 1.55; }
+.team-lbl { display: block; margin-bottom: 6px; color: var(--muted); font-size: var(--t-xs); font-weight: 500; }
+.team-dlg .input { height: 40px; font-size: 15px; }
+.team-err { margin-top: 8px; color: var(--private); font-size: 13px; font-weight: 500; }
+.team-remember { display: flex; align-items: center; gap: 8px; margin-top: 18px; color: var(--ink-2); cursor: pointer; }
+.team-hint { margin: 4px 0 0 24px; color: var(--muted); font-size: var(--t-xs); }
+.team-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.toast { position: fixed; z-index: 85; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: min(560px, calc(100vw - 32px)); display: flex; align-items: flex-start; gap: 10px; padding: 12px 10px 12px 16px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: var(--shadow-lg); font-size: 13px; line-height: 1.45; animation: fade 160ms var(--ease); }
+.toast > svg { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--muted); }
+.toast-x { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.toast-x:hover { background: var(--fill); color: var(--ink); }
+.toast-x svg { width: 14px; height: 14px; }
 
 /* ------------------------------------------------------------------ layout */
 main { flex: 1; width: 100%; min-width: 0; }
@@ -163,7 +185,7 @@ main:focus { outline: none; }
 .btn-primary { background: var(--ink); color: var(--page); border-color: var(--ink); }
 .btn-primary:hover { background: var(--ink-2); border-color: var(--ink-2); }
 .btn-accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.btn-accent:hover { background: var(--accent); filter: brightness(1.08); }
+.btn-accent:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn-quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
 .btn-quiet:hover { background: var(--fill); }
 .btn-sm { height: 30px; padding: 0 12px; font-size: 13px; }
@@ -435,6 +457,8 @@ td .none { color: var(--faint); }
 .coords { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; }
 .coord { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
 .coord .lbl { color: var(--muted); font-size: 12px; font-weight: 500; }
+.coords.rids { margin-top: 10px; }
+.rids .coord { flex-wrap: wrap; row-gap: 2px; }
 .copy { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-sm); border: 0; background: transparent; color: var(--muted); cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
 .copy:hover { background: var(--fill); color: var(--ink); }
 .copy svg { width: 14px; height: 14px; }
@@ -446,8 +470,8 @@ td .none { color: var(--faint); }
 .facts dd .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 .facts.private-facts { margin-top: 0; }
 .private-label { display: flex; align-items: center; gap: 8px; margin-top: 28px; color: var(--private); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-:root[data-theme="dark"] .private-label { color: #E0776E; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .private-label { color: #E0776E; } }
+:root[data-theme="dark"] .private-label, :root[data-theme="dark"] .team-err { color: #E0776E; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .private-label, :root:not([data-theme="light"]) .team-err { color: #E0776E; } }
 .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .links a { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: var(--r-pill); background: var(--fill); color: var(--ink); font-size: 13px; font-weight: 500; transition: background var(--dur) var(--ease); }
 .links a:hover { background: var(--fill-2); text-decoration: none; }
@@ -536,6 +560,9 @@ td .none { color: var(--faint); }
   .table-wrap { max-height: 70vh; }
   .searchbtn { width: 36px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
   .searchbtn .ph, .searchbtn .kbd { display: none; }
+  .teambtn { width: 36px; height: 36px; padding: 0; justify-content: center; border-color: transparent; }
+  .teambtn .tb-l { display: none; }
+  .teambtn svg { width: 17px; height: 17px; }
 }
 @media (max-width: 640px) {
   .wrap, .topbar-inner, .footer-inner { padding-left: 16px; padding-right: 16px; }
@@ -560,6 +587,16 @@ td .none { color: var(--faint); }
   .facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .facts > div { padding-right: 12px; }
   .private-strip { font-size: 11px; justify-content: flex-start; }
+}
+/* Compact top bar on phones: fixed-size icon buttons, and the wordmark doubles as the Home link. */
+@media (max-width: 480px) {
+  .topbar-inner { gap: 4px; }
+  .searchbtn, .iconbtn, .teambtn { flex: none; width: 32px; height: 32px; }
+  .nav a[data-nav="home"] { display: none; }
+}
+@media (max-width: 350px) {
+  .wordmark { display: none; }
+  .nav a[data-nav="home"] { display: inline-block; }
 }
 @media (max-width: 400px) {
   .facts { grid-template-columns: minmax(0, 1fr); }

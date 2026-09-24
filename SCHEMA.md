@@ -8,9 +8,10 @@ data files that `build/assemble.py` writes for the site. Paths come from
 
 Rubin DP2/EDP2 catalog data (DiaObject, DiaSource, ForcedSourceOnDiaObject,
 match separations, diaObjectIds) is proprietary under the Rubin Data Policy
-(RDO-13, DPOL-506 and DPOL-516). It is written only under `PRIVATE`
-(`rubin_hackathon/reports/tns_edp2_explorer_private/`, outside this repo)
-and appears only in the private build. Public sources are TNS, ZTF via
+(RDO-13, DPOL-506 and DPOL-516). It is written in readable form only under
+`PRIVATE` (`rubin_hackathon/reports/tns_edp2_explorer_private/`, outside this
+repo) and appears only in the private build. The public site may carry it only
+as the AES-GCM ciphertext of section 3, in `docs/data/edp2/`. Public sources are TNS, ZTF via
 ALeRCE, public Rubin alerts via Fink, and `dp2.Visit` pointing metadata, which is
 public in Rubin's tutorial-notebooks-data. Aggregate statistics from the
 cross-match (recovery fractions, histograms) are derived data products and
@@ -79,7 +80,8 @@ docs/data/lc/NNN.js    TNSX.onShard(NNN, {"2025abc": {"ztf": LC, "tns": LC, ...}
 ```
 
 `NNN` is zero-padded to 3 digits; object `i` in catalog order lives in shard
-`i // 100` (catalog column `shard`).
+`i // 100` (catalog column `shard`). `TNSX.onShard` data is not used until any
+matching encrypted shard (section 3) has been merged into it.
 
 LC (columnar, one per source per object; arrays have equal length):
 
@@ -95,7 +97,8 @@ LC (columnar, one per source per object; arrays have equal length):
  "window": {"mjd_start": 60790.117, "mjd_end": 61047.155},
  "sources": {key: {"label", "desc", "survey", "n_objects", "n_points"}},  // only sources present
  "stats": {...aggregate cross-match numbers, from summary.json...},
- "notes": [strings shown on the About page]}
+ "notes": [strings shown on the About page],
+ "team_access": true}   // only when the build ships the encrypted layer, data/edp2/
 ```
 
 `catalog.cols` and `rows`: one row per object, in catalog order. Public columns:
@@ -114,11 +117,64 @@ LC (columnar, one per source per object; arrays have equal length):
 | n_visits_active | same, within [disc-30, disc+100] d |
 | n_<source> | number of measurements (kind 0 or 1; limits excluded) per public source (0 if none) |
 | t0_<source>, t1_<source> | first and last MJD per public source (null if none) |
-| alert_ids | Fink LSST alert diaObjectIds, comma separated ("" if none) |
+| alert_ids | Rubin alert-stream diaObjectIds (via Fink LSST), comma separated ("" if none); searchable by exact value or a prefix of 6+ digits, and `#/object/<id>` resolves them |
 | n_spec | number of TNS-reported spectra (0 if none) |
 | spec_types | TNS spectra as "date instrument (group)", semicolon separated ("" if none); TNS gives no per-spectrum class, the object class is `type` |
 | shard | lightcurve shard index |
 
 Private builds add `n_edp2_dia, n_edp2_fp, t0_edp2_dia, t1_edp2_dia,
-edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc`. IDs are always strings:
+edp2_id, edp2_sep, edp2_ndia, edp2_lead, edp2_tc` (the unlocked public site
+adds the same columns from section 3). `edp2_id` is the DP2 catalogue
+diaObjectId, a different ID space from `alert_ids`. IDs are always strings:
 ~1e17 integers do not survive float64 or JS Number.
+
+## 3. Encrypted EDP2 layer (team access)
+
+Written by `build/assemble.py --mode public --encrypt-edp2` through
+`build/crypto_layer.py` and read by `docs/team.js`. Nothing else may sit in
+`docs/data/edp2/`, and `build/check_public.py` enforces these exact shapes
+(base64 fields only):
+
+```
+docs/data/edp2/keyinfo.js   TNSX.onKeyInfo({"v":1,"kdf":"PBKDF2-SHA256","iter":600000,"salt":B64,"check":{"iv":B64,"ct":B64}});
+docs/data/edp2/catalog.js   TNSX.onEnc("catalog",{"iv":B64,"ct":B64});
+docs/data/edp2/NNN.js       TNSX.onEnc("lc-NNN",{"iv":B64,"ct":B64});   one per data/lc/NNN.js, empty shards included
+```
+
+Crypto:
+
+- key = PBKDF2-HMAC-SHA256(password, salt, iter, 32 bytes). The password is
+  `TNSX_SITE_PASSWORD` from the rubin_hackathon `.env`, trimmed, Unicode NFC,
+  UTF-8. `salt` is 16 random bytes, new on every build; `iter` is at least
+  600,000.
+- Each blob is AES-256-GCM with a fresh 12-byte `iv`. `ct` is the ciphertext
+  with the 16-byte tag appended (the WebCrypto layout). The additional data is
+  the ASCII string `tnsx-edp2/v1/<name>`, with `name` being `check`, `catalog`
+  or `lc-NNN`, so a blob cannot be passed off under another name.
+- The `check` plaintext is the constant `tnsx-edp2 key check v1`; decrypting it
+  verifies a password quickly.
+- Every other plaintext is UTF-8 JSON followed by spaces up to a multiple of
+  4096 bytes.
+
+Plaintexts:
+
+```
+catalog  {"v":1, "built": ISO timestamp,
+          "names":[name, ...],                     // public catalogue order
+          "cols":["edp2_id","edp2_sep","edp2_ndia","edp2_lead","edp2_tc",
+                  "n_edp2_dia","t0_edp2_dia","t1_edp2_dia","n_edp2_fp",...],
+          "rows":[[...], ...],                     // one per name, aligned with names
+          "sources":{"edp2_dia":{label,desc,survey,n_objects,n_points}, "edp2_fp":{...}},
+          "notes":[private-build About notes], "match_radius_arcsec":2.0}
+lc-NNN   {"2025abc": {"edp2_dia": LC, "edp2_fp": LC}, ...}   // LC as in section 2; {} if none
+```
+
+Browser side: the derived key's raw bytes are stored with the salt as
+`{"v":1,"salt":B64,"key":B64}` under `tnsx-team-key` in `sessionStorage`
+(default) or `localStorage` ("Remember on this device"). At boot, a stored key
+whose salt equals `keyinfo.salt` must decrypt the check blob and `catalog`
+before the catalogue is initialised. The columns are then merged by name,
+sources are merged with EDP2 first, `meta.notes` is replaced and `meta.mode`
+becomes `"private"` (plus `meta.team = true`). Each shard load also decrypts
+`data/edp2/NNN.js` and adds its sources to the shard's objects. Any failure
+forgets the key and falls back to the public site.

@@ -282,8 +282,13 @@
   F.evaluate = function () {
     var st = F.state, N = S.N, rows = S.rows, C = S.C;
     var preds = [];
-    var qs = String(st.q || '').split(',').map(U.normQuery).filter(Boolean);
-    if (qs.length) preds.push({ bit: F.qBit, test: function (i) { var s = S.search[i]; for (var a = 0; a < qs.length; a++) if (s.indexOf(qs[a]) >= 0) return true; return false; } });
+    // Names and internal names match as substrings; Rubin diaObjectIds by exact value or a prefix of 6+ digits.
+    var qs = String(st.q || '').split(',').map(U.normQuery).filter(Boolean), rq = qs.map(U.isRidQuery);
+    if (qs.length) preds.push({ bit: F.qBit, test: function (i) {
+      var s = S.search[i];
+      for (var a = 0; a < qs.length; a++) if (s.indexOf(qs[a]) >= 0 || (rq[a] && X.ridHit(i, qs[a]))) return true;
+      return false;
+    } });
     var cone = F.cone(st), sep = null;
     if (U.isNum(cone.ra)) {
       sep = new Float64Array(N).fill(NaN);

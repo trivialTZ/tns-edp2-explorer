@@ -3,7 +3,8 @@
  * Vanilla JS, no build step. Data arrives through <script> tags that call
  * window.TNSX (SCHEMA.md section 2), so the site works over https and from file://.
  * Modules share one internal namespace, window.TNSXApp:
- *   app.js (this file) · filters.js · explore.js · home.js · object.js · about.js
+ *   app.js (this file) · team.js · filters.js · explore.js · home.js · object.js · about.js
+ * team.js adds the password-unlocked EDP2 layer (X.team); without it the site is public only.
  * Routes:  #/  ·  #/explore?<filters>  ·  #/object/<name>  ·  #/about
  */
 (function () {
@@ -23,7 +24,7 @@
     PRIVATE_BANNER: 'PROPRIETARY Rubin DP2 data. For Rubin data-rights holders only. Do not redistribute.',
     // Band families (SCHEMA.md "Band labels"). LSST u..y use Rubin-like hues re-stepped per
     // theme; ZTF/TNS filters share the colour of the matching band. Broad white-light filters
-    // (w, L, Clear) are neutral so no band colour sits near the violet UI accent.
+    // (w, L, Clear) are neutral. The teal UI accent (style.css) is never drawn inside a plot.
     FAMILIES: ['u', 'g', 'r', 'i', 'z', 'y', 'o', 'c', 'w', 'L', 'V', 'B', 'R', 'I', 'Clear', 'other'],
     FAM_COLORS: {
       light: { u: '#1f6fe0', g: '#45b35f', r: '#b3261a', i: '#b88300', z: '#d23d98', y: '#8a3b2c',
@@ -41,6 +42,10 @@
     SRC_SHORT: { edp2_dia: 'EDP2 DIA', edp2_fp: 'EDP2 forced', lsst_alert: 'LSST alerts', lsst_alert_fp: 'LSST alert FP',
       ztf: 'ZTF', ztf_fp: 'ZTF forced', tns: 'TNS' },
     KIND_LABEL: ['detection', 'forced', 'upper limit'],
+    // Rubin difference-image object IDs. Alert-stream IDs are public; the DP2 catalogue ID exists only
+    // in private or unlocked mode. Always strings: ~1e17 integers exceed Number precision.
+    RID_LABEL: { alert: 'Rubin diaObjectId (alert stream)', dp2: 'Rubin DP2 diaObjectId' },
+    RID_MIN_PREFIX: 6,
     // Columns the object page knows how to show; anything else is listed as key: value.
     KNOWN_COLS: ['name', 'prefix', 'ra', 'dec', 'type', 'z', 'group', 'disc_mjd', 'disc_mag', 'disc_filter', 'internal',
       'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types',
@@ -52,11 +57,11 @@
   // ------------------------------------------------------------------ state
   var S = X.S = {
     catalogRaw: null, meta: {}, cols: [], rows: [], C: {}, N: 0,
-    byName: new Map(), search: [], nameKey: [],
+    byName: new Map(), search: [], nameKey: [], rids: [], byRid: new Map(),
     srcKeys: [], isPrivate: false, matchR: K.DEFAULT_MATCH_R,
     view: null, lastObj: null, listQuery: '',
     visits: null, visitsState: 'idle', nearCache: new Map(),
-    shards: {}, shardPromises: {}, plotlyPromise: null,
+    shards: {}, shardRaw: {}, shardPromises: {}, plotlyPromise: null,
     theme: 'auto'
   };
   X.views = {};
@@ -65,7 +70,7 @@
   var TNSX = window.TNSX = window.TNSX || {};
   TNSX.onCatalog = function (d) { S.catalogRaw = d; };
   TNSX.onVisits = function (d) { ingestVisits(d); };
-  TNSX.onShard = function (n, d) { S.shards[Number(n)] = d || {}; };
+  TNSX.onShard = function (n, d) { S.shardRaw[Number(n)] = d || {}; };
 
   // ------------------------------------------------------------------ helpers
   var U = X.U = {};
@@ -166,6 +171,8 @@
     s = String(s || '').toLowerCase().replace(/\s+/g, '');
     return /^(sn|at)\d{4}/.test(s) ? s.slice(2) : s;
   };
+  // A Rubin ID query: digits only, at least K.RID_MIN_PREFIX of them (exact ID or prefix).
+  U.isRidQuery = function (q) { return /^\d+$/.test(q) && q.length >= K.RID_MIN_PREFIX; };
   U.fmtBuilt = function (b) {
     if (!b) return '';
     var d = new Date(b);
@@ -257,7 +264,8 @@
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
     moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
     auto: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
-    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    unlock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.6-1.8"/>'
   };
   U.icon = function (name, extra) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (extra || 1.9) +
@@ -347,14 +355,20 @@
       document.head.appendChild(el);
     });
   };
+  // A shard is public data/lc/NNN.js, plus the decrypted data/edp2/NNN.js when team access is unlocked.
+  // S.shards[n] is set only once both parts are merged.
   X.loadShard = function (n) {
     if (S.shards[n]) return Promise.resolve(S.shards[n]);
     if (S.shardPromises[n]) return S.shardPromises[n];
     var src = 'data/lc/' + U.pad3(n) + '.js';
-    var p = U.loadScript(src).then(function () {
-      if (!S.shards[n]) throw new Error(src + ' loaded but did not call TNSX.onShard(' + n + ', …)');
-      return S.shards[n];
+    var pub = U.loadScript(src).then(function () {
+      var d = S.shardRaw[n];
+      delete S.shardRaw[n];
+      if (!d) throw new Error(src + ' loaded but did not call TNSX.onShard(' + n + ', …)');
+      return d;
     });
+    var p = (X.team && X.team.unlocked ? Promise.all([pub, X.team.shard(n)]).then(function (r) { return X.team.mergeShard(r[0], r[1]); }) : pub)
+      .then(function (d) { S.shards[n] = d; return d; });
     S.shardPromises[n] = p;
     p.catch(function () { delete S.shardPromises[n]; });
     return p;
@@ -425,7 +439,7 @@
     S.isPrivate = S.meta.mode === 'private';
     S.matchR = U.isNum(S.meta.match_radius_arcsec) ? S.meta.match_radius_arcsec : K.DEFAULT_MATCH_R;
     S.srcKeys = Object.keys(S.meta.sources || {}).filter(function (k) { return U.has('n_' + k); });
-    var jn = S.C.name, ji = S.C.internal;
+    var jn = S.C.name, ji = S.C.internal, ja = S.C.alert_ids, je = S.isPrivate ? S.C.edp2_id : undefined;
     for (var i = 0; i < S.N; i++) {
       var r = S.rows[i], name = String(r[jn]);
       S.byName.set(name, i);
@@ -433,6 +447,12 @@
       var internal = ji === undefined ? '' : String(r[ji] || '');
       S.search[i] = '|' + name.toLowerCase() + '|' + internal.toLowerCase().replace(/\s+/g, '').split(',').join('|') + '|';
       S.nameKey[i] = U.tnsNameKey(name);
+      // Rubin IDs: matched by exact value or digit prefix only (X.ridMatches), never by substring.
+      var ids = [];
+      if (ja !== undefined) String(r[ja] == null ? '' : r[ja]).split(',').forEach(function (x) { x = x.trim(); if (/^\d+$/.test(x)) ids.push({ id: x, kind: 'alert' }); });
+      if (je !== undefined && r[je] != null && /^\d+$/.test(String(r[je]))) ids.push({ id: String(r[je]), kind: 'dp2' });
+      S.rids[i] = ids;
+      for (var k = 0; k < ids.length; k++) if (!S.byRid.has(ids[k].id)) S.byRid.set(ids[k].id, i);
     }
     // totals used by Home and About
     var pts = 0;
@@ -459,7 +479,7 @@
     }
     var built = U.fmtBuilt(S.meta.built);
     document.getElementById('footer-built').textContent = 'TNS × EDP2 Explorer · ' + U.fint(S.N) + ' transients · ' +
-      (S.isPrivate ? 'private build' : 'public build') + (built ? ' · built ' + built : '');
+      (S.meta.team ? 'team access unlocked' : S.isPrivate ? 'private build' : 'public build') + (built ? ' · built ' + built : '');
   }
 
   // ------------------------------------------------------------------ theme
@@ -524,6 +544,23 @@
   }
   X.route = route;
 
+  // ------------------------------------------------------------------ Rubin IDs
+  // Objects with a Rubin ID starting with q (q: U.isRidQuery), one entry per object: {i, id, kind}.
+  X.ridMatches = function (q) {
+    var out = [];
+    if (!U.isRidQuery(q)) return out;
+    for (var i = 0; i < S.N; i++) {
+      var ids = S.rids[i];
+      for (var k = 0; k < ids.length; k++) if (ids[k].id.indexOf(q) === 0) { out.push({ i: i, id: ids[k].id, kind: ids[k].kind }); break; }
+    }
+    return out;
+  };
+  X.ridHit = function (i, q) {
+    var ids = S.rids[i];
+    for (var k = 0; k < ids.length; k++) if (ids[k].id.indexOf(q) === 0) return true;
+    return false;
+  };
+
   // ------------------------------------------------------------------ search suggestions (hero + spotlight)
   function matchItems(raw, limit) {
     var q = U.normQuery(raw);
@@ -531,10 +568,11 @@
     var cp = U.parseCoordPair(raw);
     if (cp) items.push({ kind: 'cone', ra: cp.ra, dec: cp.dec });
     if (!q) return items;
-    var hits = [];
+    var hits = [], seen = new Map();
+    X.ridMatches(q).forEach(function (h) { seen.set(h.i, hits.length); hits.push([h.id === q ? -2 : -1, h.i, h]); });
     for (var i = 0; i < S.N; i++) {
       var s = S.search[i], at = s.indexOf(q);
-      if (at < 0) continue;
+      if (at < 0 || seen.has(i)) continue;
       var name = s.slice(1, s.indexOf('|', 1)), score;
       if (name === q) score = 0;
       else if (name.indexOf(q) === 0) score = 1;
@@ -542,8 +580,12 @@
       else score = 3;
       hits.push([score, i]);
     }
-    hits.sort(function (a, b) { return a[0] - b[0] || (S.nameKey[b[1]] < S.nameKey[a[1]] ? -1 : 1); });
-    hits.slice(0, limit).forEach(function (h) { items.push({ kind: 'obj', i: h[1] }); });
+    hits.sort(function (a, b) {
+      if (a[0] !== b[0]) return a[0] - b[0];
+      if (a[2] && b[2]) return a[2].id < b[2].id ? -1 : 1;                 // ID matches in ID order
+      return S.nameKey[b[1]] < S.nameKey[a[1]] ? -1 : 1;
+    });
+    hits.slice(0, limit).forEach(function (h) { items.push(h[2] ? { kind: 'rid', i: h[1], id: h[2].id, rk: h[2].kind } : { kind: 'obj', i: h[1] }); });
     if (hits.length > limit) items.push({ kind: 'all', q: raw.trim(), n: hits.length });
     if (!hits.length && !cp) items.push({ kind: 'none', q: raw.trim() });
     return items;
@@ -555,6 +597,12 @@
   }
   function itemHtml(it, q, id, sel) {
     var attrs = ' role="option" id="' + id + '" aria-selected="' + (sel ? 'true' : 'false') + '"';
+    if (it.kind === 'rid') {
+      var n = String(U.V(it.i, 'name')), ty = U.V(it.i, 'type');
+      return '<li' + attrs + '><span class="s-name"><span class="pfx">' + U.esc(U.V(it.i, 'prefix') || '') + '</span> ' + U.esc(n) + '</span>' +
+        '<span class="s-meta">' + (ty ? U.esc(ty) + ' · ' : '') + U.esc(U.niceDate(U.V(it.i, 'disc_mjd'))) + '</span>' +
+        '<span class="s-sub">' + U.esc(K.RID_LABEL[it.rk]) + ' <span class="mono"><mark>' + U.esc(it.id.slice(0, q.length)) + '</mark>' + U.esc(it.id.slice(q.length)) + '</span></span></li>';
+    }
     if (it.kind === 'obj') {
       var i = it.i, name = String(U.V(i, 'name')), type = U.V(i, 'type');
       var internal = String(U.V(i, 'internal') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
@@ -572,11 +620,11 @@
       return '<li class="s-action"' + attrs + '><span class="s-name">See all ' + U.fint(it.n) + ' matches for “' + U.esc(it.q) + '”</span><span class="s-meta">Explore →</span></li>';
     }
     return '<li class="s-empty" role="option" id="' + id + '" aria-disabled="true"><span class="s-name">No transient matches “' + U.esc(it.q) + '”</span>' +
-      '<span class="s-meta">try a TNS name, an internal name or “RA Dec”</span></li>';
+      '<span class="s-meta">try a TNS name, an internal name, a Rubin diaObjectId (' + K.RID_MIN_PREFIX + '+ digits) or “RA Dec”</span></li>';
   }
   function chooseItem(it) {
     if (!it) return;
-    if (it.kind === 'obj') X.go('#/object/' + encodeURIComponent(U.V(it.i, 'name')));
+    if (it.kind === 'obj' || it.kind === 'rid') X.go('#/object/' + encodeURIComponent(U.V(it.i, 'name')));
     else if (it.kind === 'cone') X.go('#/explore?ra=' + it.ra.toFixed(5) + '&dec=' + it.dec.toFixed(5) + '&rad=' + K.DEFAULT_CONE_AS);
     else if (it.kind === 'all') X.go('#/explore?q=' + encodeURIComponent(it.q));
   }
@@ -641,7 +689,7 @@
     dlg.setAttribute('role', 'dialog');
     dlg.setAttribute('aria-modal', 'true');
     dlg.setAttribute('aria-label', 'Search transients');
-    dlg.innerHTML = '<div class="spot-field">' + U.icon('search', 2) + '<input type="search" placeholder="TNS name, internal name or RA Dec" aria-label="Search transients" autocomplete="off" spellcheck="false"></div>' +
+    dlg.innerHTML = '<div class="spot-field">' + U.icon('search', 2) + '<input type="search" placeholder="TNS name, internal name, Rubin diaObjectId or RA Dec" aria-label="Search transients" autocomplete="off" spellcheck="false"></div>' +
       '<ul class="suggest" hidden></ul><p class="spot-hint">↑↓ to move · Enter to open · Esc to close</p>';
     document.body.appendChild(scrim);
     document.body.appendChild(dlg);
@@ -675,10 +723,13 @@
   X.boot = function () {
     initTheme();
     initShell();
-    X.catalogLoad.then(function () {
+    // Team access: the decrypted EDP2 payload (or null) is merged before the catalogue is initialised.
+    Promise.all([X.catalogLoad, X.team ? X.team.ready : null]).then(function (res) {
       if (!S.catalogRaw) throw new Error('data/catalog.js loaded but did not call TNSX.onCatalog');
+      if (res[1]) X.team.apply(S.catalogRaw, res[1]);
       initCatalog(S.catalogRaw);
       S.catalogRaw = null;
+      if (X.team) X.team.initUi();
       X.F.init();
       Object.keys(X.views).forEach(function (k) { if (X.views[k].init) X.views[k].init(); });
       document.getElementById('boot-generic').hidden = true;

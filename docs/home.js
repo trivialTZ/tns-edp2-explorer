@@ -25,9 +25,10 @@
       '<h1>Lightcurves for every TNS transient in the Rubin EDP2 footprint</h1></div>' +
       '<p class="lede">' + U.fint(S.N) + ' transients reported to the Transient Name Server between ' + esc(span.replace(' – ', ' and ')) +
       ', each inside the area Rubin observed for its second data preview. Every page overlays photometry from ' + esc(surveysPhrase()) + ' on one flux scale.' +
-      (S.isPrivate ? ' This private build adds proprietary Rubin DP2 catalogue photometry.' : '') + '</p>' +
+      (S.meta.team ? ' Team access is unlocked, so pages add proprietary Rubin DP2 catalogue photometry.' :
+        S.isPrivate ? ' This private build adds proprietary Rubin DP2 catalogue photometry.' : '') + '</p>' +
       '<div class="hero-search"><div class="spot"><div class="spot-field">' + U.icon('search', 2) +
-      '<input type="search" id="hero-q" placeholder="Search a TNS name, internal name or “RA Dec”" aria-label="Search transients" autocomplete="off" spellcheck="false"></div>' +
+      '<input type="search" id="hero-q" placeholder="Search a TNS name, internal name, Rubin diaObjectId or “RA Dec”" aria-label="Search transients" autocomplete="off" spellcheck="false"></div>' +
       '<ul class="suggest" id="hero-suggest" hidden></ul></div></div>' +
       '<div class="hero-actions"><a class="btn btn-primary btn-lg" href="#/explore">Explore all ' + U.fint(S.N) + ' ' + U.icon('arrow', 2) + '</a>' +
       '<button type="button" class="btn btn-lg" id="hero-random">' + U.icon('shuffle', 1.8) + 'Random transient</button></div></div>' +

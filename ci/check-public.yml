@@ -9,4 +9,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: No proprietary Rubin DP2 data in the public site
-        run: python build/check_public.py docs
+        run: python build/test_check_public.py && python build/check_public.py docs
