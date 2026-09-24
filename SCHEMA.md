@@ -77,6 +77,7 @@ it inserts any data script.
 docs/data/catalog.js   TNSX.onCatalog({meta, cols, rows})
 docs/data/visits.js    TNSX.onVisits({cols:["mjd","band","ra","dec"], rows:[[...], ...]})
 docs/data/lc/NNN.js    TNSX.onShard(NNN, {"2025abc": {"ztf": LC, "tns": LC, ...}, ...})
+docs/data/spec/NNN.js  TNSX.onSpec(NNN, {"2025abc": [SPEC, ...], ...})   only shards that hold spectra
 ```
 
 `NNN` is zero-padded to 3 digits; object `i` in catalog order lives in shard
@@ -90,6 +91,14 @@ LC (columnar, one per source per object; arrays have equal length):
  "k": [0|1|2...], "l": [limit mag or null], "x": [note...]}
 ```
 
+SPEC (one public TNS spectrum, build/fetch_tns_spectra.py; flux divided by its median and
+resampled onto a uniform wavelength grid of at most 1,200 bins, never finer than the native one):
+
+```
+{"t": mjd, "tel": str, "inst": str, "grp": str, "url": original TNS file,
+ "w0": first bin centre (Angstrom, observed frame), "dw": bin width (Angstrom), "f": [flux or null]}
+```
+
 `catalog.meta`:
 
 ```
@@ -100,6 +109,7 @@ LC (columnar, one per source per object; arrays have equal length):
  "notes": [strings shown on the About page],
  "team_access": true,   // only when the build ships the encrypted layer, data/edp2/
  "regions": ["WFD", DDF field names...],
+ "spectra": {"n_objects", "n_spectra"},
  "debass": {"n", "statuses", "updated"},
  "hosts": {"n_rows", "n_images", "fits_withheld"}}   // only when host products exist
 ```
@@ -126,6 +136,7 @@ merges it into catalogue columns at load (null where an object has none).
 | t0_<source>, t1_<source> | first and last MJD per public source (null if none) |
 | alert_ids | Rubin alert-stream diaObjectIds (via Fink LSST), comma separated ("" if none); searchable by exact value or a prefix of 6+ digits, and `#/object/<id>` resolves them |
 | n_spec | number of TNS-reported spectra (0 if none) |
+| n_spec_plot | number of those in data/spec/ (public, file parsed) |
 | spec_types | TNS spectra as "date instrument (group)", semicolon separated ("" if none); TNS gives no per-spectrum class, the object class is `type` |
 | region | `WFD`, or the LSST Deep Drilling Field (`COSMOS`, `ECDFS`, `EDFS`, `ELAIS-S1`, `XMM-LSS`) when a dp2.Visit aimed within 1 deg of that field's centre (common.DDF_FIELDS) has its centre within 1.75 deg of the object. dp2.Visit has no survey-programme column, so `WFD` also holds commissioning science-validation fields |
 | debass | `FINISHED` or `YES` from the DEBASS sheet's `Following?` column (build/fetch_debass.py; TNS name, else position <= 2"), null otherwise |

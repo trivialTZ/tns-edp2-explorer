@@ -519,6 +519,7 @@ td .none { color: var(--faint); }
 .host-facts { margin-top: 0; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .host-fit h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 22px 0 8px; font-size: var(--t-md); font-weight: 600; }
 table.host-post th, table.host-post td { padding: 8px 10px; }
+@media (max-width: 480px) { table.host-post th, table.host-post td { padding: 8px 6px; font-size: 12.5px; } table.host-post { width: 100%; } }
 table.host-post thead th { position: static; box-shadow: none; }
 .host-note { margin-top: 10px; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
 .host-note.muted { color: var(--muted); }
@@ -536,6 +537,17 @@ table.host-post thead th { position: static; box-shadow: none; }
 .lc-opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .lc-plot { width: 100%; height: 580px; margin-top: 8px; }
 .lc-msg { height: 100%; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+.spec-plot { height: 520px; }
+.spec-legend { gap: 8px 10px; }
+.sp-item { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-width: 0; }
+.spec-legend .lchip { min-width: 0; }
+.spec-legend .lchip span { white-space: normal; height: auto; min-height: 30px; padding-top: 5px; padding-bottom: 5px; line-height: 1.35; }
+.spec-legend .lchip .sw { align-self: center; }
+.spl { font-weight: 500; white-space: normal; }
+.spl .n { font-size: 12px; margin-left: 2px; }
+.sp-file { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--muted); }
+.sp-file:hover { background: var(--fill); color: var(--accent); }
+.sp-file svg { width: 13px; height: 13px; }
 .lc-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; padding: 8px 0 4px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .tick-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .tk-item { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }

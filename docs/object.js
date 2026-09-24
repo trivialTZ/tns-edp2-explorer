@@ -9,8 +9,10 @@
 
   // ------------------------------------------------------------------ page
   function purgePlot() {
-    var el = document.getElementById('lc-plot');
-    if (el && window.Plotly && el._fullLayout) window.Plotly.purge(el);
+    ['lc-plot', 'spec-plot'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && window.Plotly && el._fullLayout) window.Plotly.purge(el);
+    });
   }
   function plotMessage(html) {
     purgePlot();
@@ -43,6 +45,7 @@
       '<div class="lc-plot" id="lc-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:260px;height:10px;margin:0 auto 10px"></span>Loading lightcurve…</div></div></div>' +
       '<div class="lc-foot" id="lc-foot"></div>' +
       '<details class="pts" id="pts"><summary>' + U.icon('chev', 2) + 'Photometry table <span class="muted">· points shown in the plot</span></summary><div id="pts-table"></div></details></section>' +
+      specCardHtml(i) +
       '<p class="sr-only" id="obj-live" aria-live="polite"></p></div>';
     wire(root);
     var h1 = root.querySelector('h1');
@@ -60,6 +63,7 @@
       plotMessage(msg + '<br><button type="button" class="btn btn-sm" id="lc-retry" style="margin-top:12px">Try again</button>');
       $('#lc-retry').addEventListener('click', function () { show(name); });
     });
+    loadSpectra(i);
     if (S.visitsState === 'idle') X.loadVisits();
   }
 
@@ -609,9 +613,141 @@
   }
 
   X.onVisitsChanged = function () { if (S.view === 'object' && O) { O.near = null; updatePlot(); } };
+  // ------------------------------------------------------------------ TNS spectra (public, data/spec/NNN.js)
+  // Each spectrum is resampled on a uniform grid (w0 + k*dw, Angstrom) and divided by its median
+  // (build/fetch_tns_spectra.py), so the plot compares shapes; the original TNS file is linked.
+  var SP = { frame: 'obs', stack: true, lines: true, off: new Set() };
+  var SPD = null;     // current object's spectra: {i, list, z, disc}
+  var SPEC_PAL = {
+    light: ['#12191D', '#b3261a', '#1f6fe0', '#b88300', '#8e3fa5', '#3d8b37', '#d9534f', '#7a5c00'],
+    dark: ['#EDF1F3', '#e8706b', '#6f9ff5', '#d9b550', '#c08ae0', '#7fd07a', '#f09a96', '#e0c070']
+  };
+  // Rest wavelengths (Angstrom) of features commonly used to classify supernovae.
+  var SPEC_LINES = [[3945, 'Ca II'], [4340, 'Hγ'], [4861, 'Hβ'], [5169, 'Fe II'], [5454, 'S II'], [5640, 'S II'],
+    [5876, 'He I'], [6355, 'Si II'], [6563, 'Hα'], [7774, 'O I'], [8579, 'Ca II']];
+  var TELLURIC = [[6860, 6890], [7590, 7700]];     // O2 B and A bands, observed frame
+
+  function specCardHtml(i) {
+    var n = V(i, 'n_spec') || 0, np = V(i, 'n_spec_plot') || 0;
+    if (!n) return '';
+    var h = '<section class="card lc-card spec-card" aria-labelledby="spec-h"><div class="lc-head"><h2 id="spec-h">Spectra</h2><div class="lc-ctl" id="spec-ctl"></div></div>';
+    if (!np) {
+      return h + '<p class="muted" style="margin:16px 0 8px">TNS lists ' + U.plural(n, 'spectrum', 'spectra') + ', but no public file could be read in this build' +
+        (V(i, 'spec_types') ? ': ' + esc(V(i, 'spec_types')) : '') + '. <a href="https://www.wis-tns.org/object/' + encodeURIComponent(V(i, 'name')) + '" target="_blank" rel="noopener">See TNS</a>.</p></section>';
+    }
+    return h + '<div id="spec-legend"></div>' +
+      '<div class="lc-plot spec-plot" id="spec-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:220px;height:10px;margin:0 auto 10px"></span>Loading spectra…</div></div></div>' +
+      '<div class="lc-foot" id="spec-foot"></div></section>';
+  }
+  function loadSpectra(i) {
+    SPD = null;
+    if (!(V(i, 'n_spec_plot') > 0)) return;
+    SP.off = new Set();
+    Promise.all([X.loadSpec(X.shardOf(i)), X.ensurePlotly()]).then(function (res) {
+      if (cur !== i) return;
+      SPD = { i: i, list: (res[0] || {})[V(i, 'name')] || [], z: V(i, 'z'), disc: V(i, 'disc_mjd') };
+      renderSpecControls();
+      drawSpec();
+    }).catch(function (e) {
+      if (cur !== i) return;
+      var el = $('#spec-plot');
+      if (el) el.innerHTML = '<div class="lc-msg"><div>The spectra could not be loaded (' + esc(e.message) + ').</div></div>';
+    });
+  }
+  function specLabel(s) {
+    var dt = U.isNum(s.t) && U.isNum(SPD.disc) ? s.t - SPD.disc : null;
+    return { date: U.isoDate(s.t), phase: dt == null ? '' : (dt < 0 ? '−' : '+') + Math.abs(dt).toFixed(Math.abs(dt) < 10 ? 1 : 0) + ' d',
+      inst: [s.tel, s.inst].filter(Boolean).join(' '), grp: s.grp || '' };
+  }
+  function specColor(k) { var p = SPEC_PAL[U.isDark() ? 'dark' : 'light']; return p[k % p.length]; }
+  function renderSpecControls() {
+    var ctl = $('#spec-ctl'), leg = $('#spec-legend');
+    if (!ctl || !SPD) return;
+    var hasZ = U.isNum(SPD.z) && SPD.z > 0;
+    if (!hasZ) SP.frame = 'obs';
+    ctl.innerHTML = (hasZ ? seg('spframe', 'Wavelength frame', [['obs', 'Observed'], ['rest', 'Rest frame']], SP.frame) : '') +
+      (SPD.list.length > 1 ? seg('spstack', 'Layout', [['stack', 'Stacked'], ['over', 'Overlaid']], SP.stack ? 'stack' : 'over') : '') +
+      toggle('sp-lines', 'Line markers', SP.lines && hasZ, null, !hasZ, false, hasZ ? 'Common SN features at z = ' + U.fx(SPD.z, 4) : 'Needs a TNS redshift');
+    leg.innerHTML = '<div class="lc-legend spec-legend">' + SPD.list.map(function (s, k) {
+      var L = specLabel(s);
+      return '<span class="sp-item"><label class="lchip" title="' + esc([L.date, L.inst, L.grp].filter(Boolean).join(' · ')) + '"><input type="checkbox" data-sp="' + k + '"' + (SP.off.has(k) ? '' : ' checked') + '>' +
+        '<span><i class="sw" style="background:' + specColor(k) + '"></i><b class="spl">' + esc(L.date) + (L.phase ? ' <small class="n">' + esc(L.phase) + '</small>' : '') +
+        (L.inst ? ' · ' + esc(L.inst) : '') + (L.grp ? ' <small class="n">' + esc(L.grp) + '</small>' : '') + '</b></span></label>' +
+        '<a class="sp-file" href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer" title="Original file on TNS" aria-label="Original file on TNS for the ' + esc(L.date) + ' spectrum">' + U.icon('ext', 2) + '</a></span>';
+    }).join('') + '</div>';
+    var card = $('.spec-card');
+    card.onchange = function (e) {
+      var t = e.target;
+      if (t.name === 'spframe') SP.frame = t.value;
+      else if (t.name === 'spstack') SP.stack = t.value === 'stack';
+      else if (t.id === 'sp-lines') SP.lines = t.checked;
+      else if (t.hasAttribute('data-sp')) { var k = +t.getAttribute('data-sp'); if (t.checked) SP.off.delete(k); else SP.off.add(k); }
+      else return;
+      drawSpec();
+    };
+  }
+  function drawSpec() {
+    var el = $('#spec-plot');
+    if (!el || !SPD || !window.Plotly) return;
+    var list = SPD.list, z = SPD.z, hasZ = U.isNum(z) && z > 0, rest = SP.frame === 'rest' && hasZ, div = rest ? 1 + z : 1;
+    var shown = list.map(function (s, k) { return k; }).filter(function (k) { return !SP.off.has(k); });
+    var ink = U.cssVar('--ink'), muted = U.cssVar('--muted'), line = U.cssVar('--line'), card = U.cssVar('--card'), win = U.cssVar('--plot-window');
+    var stack = SP.stack && shown.length > 1, step = 0;
+    if (stack) {
+      var spreads = shown.map(function (k) {
+        var f = list[k].f.filter(U.isNum).sort(function (a, b) { return a - b; });
+        return (quantile(f, 0.98) || 1) - (quantile(f, 0.02) || 0);
+      }).sort(function (a, b) { return a - b; });
+      step = Math.max(0.6, quantile(spreads, 0.5) * 0.85);
+    }
+    var traces = [], ann = [], shapes = [], xmin = Infinity, xmax = -Infinity;
+    shown.forEach(function (k, r) {
+      var s = list[k], n = s.f.length, x = new Array(n), y = new Array(n), off = stack ? (shown.length - 1 - r) * step : 0, L = specLabel(s);
+      for (var j = 0; j < n; j++) { x[j] = (s.w0 + j * s.dw) / div; y[j] = s.f[j] == null ? null : s.f[j] + off; }
+      xmin = Math.min(xmin, x[0]); xmax = Math.max(xmax, x[n - 1]);
+      traces.push({ type: 'scatter', mode: 'lines', x: x, y: y, connectgaps: false, line: { color: specColor(k), width: 1.3 },
+        hovertemplate: '%{x:.0f} Å · %{y:.2f}<br>' + esc(L.date + (L.phase ? ' (' + L.phase + ')' : '') + (L.inst ? ' · ' + L.inst : '')) + '<extra></extra>' });
+      if (stack) {
+        var tail = s.f.slice(Math.floor(n * 0.9)).filter(U.isNum).sort(function (a, b) { return a - b; });
+        ann.push({ text: L.phase || L.date, x: x[n - 1], y: (quantile(tail, 0.5) || 1) + off, xanchor: 'left', yanchor: 'middle', xshift: 6, showarrow: false,
+          font: { size: 11, color: specColor(k) } });
+      }
+    });
+    TELLURIC.forEach(function (b) {
+      shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: b[0] / div, x1: b[1] / div, y0: 0, y1: 1, fillcolor: win, line: { width: 0 }, layer: 'below' });
+    });
+    ann.push({ text: '⊕ telluric', xref: 'x', yref: 'paper', x: 7645 / div, y: 0, yanchor: 'bottom', showarrow: false, font: { size: 10, color: muted } });
+    if (SP.lines && hasZ) {
+      SPEC_LINES.forEach(function (l) {
+        var xl = rest ? l[0] : l[0] * (1 + z);
+        if (xl < xmin || xl > xmax) return;
+        shapes.push({ type: 'line', xref: 'x', yref: 'paper', x0: xl, x1: xl, y0: 0, y1: 1, line: { color: muted, width: 1, dash: 'dot' }, opacity: 0.55 });
+        ann.push({ text: l[1], xref: 'x', yref: 'paper', x: xl, y: 1, yanchor: 'bottom', textangle: -90, xanchor: 'center', showarrow: false, font: { size: 10, color: muted } });
+      });
+    }
+    var layout = {
+      margin: { l: 56, r: stack ? 64 : 12, t: SP.lines && hasZ ? 44 : 16, b: 44 }, paper_bgcolor: card, plot_bgcolor: card,
+      font: { family: 'Inter, ui-sans-serif, system-ui, sans-serif', size: 12, color: muted }, hovermode: 'closest', dragmode: 'zoom', showlegend: false,
+      hoverlabel: { bgcolor: card, bordercolor: line, font: { color: ink, family: 'Inter, sans-serif', size: 12 } },
+      uirevision: SPD.i + '|' + SP.frame + '|' + SP.stack,
+      xaxis: { title: { text: (rest ? 'Rest-frame' : 'Observed') + ' wavelength (Å)', standoff: 10, font: { size: 12, color: muted } }, gridcolor: line, zeroline: false,
+        showline: false, ticks: '', automargin: true, separatethousands: false, tickformat: 'd', tickfont: { color: muted } },
+      yaxis: { title: { text: 'Flux / median' + (stack ? ' + offset' : ''), standoff: 8, font: { size: 12, color: muted } }, gridcolor: line, zeroline: false,
+        showline: false, ticks: '', automargin: true, showticklabels: !stack, tickfont: { color: muted } },
+      shapes: shapes, annotations: ann
+    };
+    var config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+      toImageButtonOptions: { filename: 'spec_' + (V(SPD.i, 'prefix') || '') + V(SPD.i, 'name'), scale: 2 } };
+    if (el.querySelector('.lc-msg')) el.innerHTML = '';
+    if (!shown.length) { window.Plotly.purge(el); el.innerHTML = '<div class="lc-msg"><div>Pick a spectrum above to plot it.</div></div>'; }
+    else window.Plotly.react(el, traces, layout, config);
+    $('#spec-foot').innerHTML = '<span>' + U.fint(shown.length) + ' of ' + U.plural(list.length, 'TNS spectrum', 'TNS spectra') + ' shown · each divided by its median and resampled to ≤ 1,200 points</span>' +
+      '<span>' + (hasZ ? 'z = ' + U.fx(z, 4) + ' (TNS)' : 'no TNS redshift: observed frame only') + '</span>';
+  }
+
   X.views.object = {
     show: function (name) { show(name); },
-    onTheme: function () { if (O) { renderControls(); updatePlot(); } },
+    onTheme: function () { if (O) { renderControls(); updatePlot(); } if (SPD) { renderSpecControls(); drawSpec(); } },
     onKey: function (e) {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 'ArrowLeft' || e.key === '[') { if (rel(-1)) e.preventDefault(); }

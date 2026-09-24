@@ -50,7 +50,7 @@
     DEBASS_LABEL: { FINISHED: 'Finished', YES: 'Following' },
     // Columns the object page knows how to show; anything else is listed as key: value.
     KNOWN_COLS: ['name', 'prefix', 'ra', 'dec', 'type', 'z', 'group', 'disc_mjd', 'disc_mag', 'disc_filter', 'internal',
-      'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'region', 'debass',
+      'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'n_spec_plot', 'region', 'debass',
       'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc', 'edp2_coadd', 'edp2_coadd_bands']
   };
   var FAM_EXACT = { R: 'R', I: 'I', V: 'V', B: 'B', L: 'L' };
@@ -64,6 +64,7 @@
     view: null, lastObj: null, listQuery: '',
     visits: null, visitsState: 'idle', nearCache: new Map(),
     shards: {}, shardRaw: {}, shardPromises: {}, plotlyPromise: null,
+    specRaw: {}, specPromises: {},          // public TNS spectra, data/spec/NNN.js (same shard index as lightcurves)
     hostImg: {}, hostTeam: new Set(),       // host figures from encrypted shards; host rows only team access shows
     theme: 'auto'
   };
@@ -74,6 +75,7 @@
   TNSX.onCatalog = function (d) { S.catalogRaw = d; };
   TNSX.onVisits = function (d) { ingestVisits(d); };
   TNSX.onShard = function (n, d) { S.shardRaw[Number(n)] = d || {}; };
+  TNSX.onSpec = function (n, d) { S.specRaw[Number(n)] = d || {}; };
 
   // ------------------------------------------------------------------ helpers
   var U = X.U = {};
@@ -378,6 +380,19 @@
     S.shardPromises[n] = p;
     p.catch(function () { delete S.shardPromises[n]; });
     return p;
+  };
+  // TNS spectra of one shard: {name: [{t, tel, inst, grp, url, w0, dw, f}]}. Only shards that hold spectra exist.
+  X.loadSpec = function (n) {
+    if (!S.specPromises[n]) {
+      var src = 'data/spec/' + U.pad3(n) + '.js';
+      S.specPromises[n] = U.loadScript(src).then(function () {
+        var d = S.specRaw[n];
+        if (!d) throw new Error(src + ' loaded but did not call TNSX.onSpec(' + n + ', …)');
+        return d;
+      });
+      S.specPromises[n].catch(function () { delete S.specPromises[n]; });
+    }
+    return S.specPromises[n];
   };
   // Host galaxies: a sparse table {cols: ["name", "host_*"...], rows} merged into catalogue columns
   // (null where an object has no host row). Validated before anything is changed. Returns the names set.

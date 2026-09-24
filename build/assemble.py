@@ -30,6 +30,7 @@ import common as C
 import hosts as H
 
 PUBLIC_NORM_FILES = ["ztf.parquet", "tns.parquet", "lsst_alert.parquet"]
+SPEC_NORM = C.NORM / "tns_spec.parquet"                    # build/fetch_tns_spectra.py (public TNS spectra)
 EDP2_NORM = C.PRIVATE_NORM / "edp2.parquet"
 EDP2_OBJECTS = C.PRIVATE_NORM / "edp2_objects.parquet"
 EDP2_COADD = C.PRIVATE_NORM / "edp2_coadd.parquet"         # build/fetch_edp2_coadd.py
@@ -314,6 +315,23 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
     return payload, shards, ids
 
 
+def spectra_shards(cat: pd.DataFrame) -> dict[int, dict]:
+    """{shard: {name: [spectrum, ...]}} of the plottable public TNS spectra; sets cat["n_spec_plot"]."""
+    cat["n_spec_plot"] = 0
+    if not SPEC_NORM.exists():
+        return {}
+    s = pd.read_parquet(SPEC_NORM)
+    shard_of = cat.set_index("name")["shard"]
+    s = s[s["name"].isin(shard_of.index)].sort_values(["name", "mjd"])
+    cat["n_spec_plot"] = cat["name"].map(s.groupby("name").size()).fillna(0).astype(int)
+    out: dict[int, dict] = {}
+    for r in s.itertuples(index=False):
+        out.setdefault(int(shard_of[r.name]), {}).setdefault(r.name, []).append({
+            "t": _clean(r.mjd, 4), "tel": r.tel, "inst": r.inst, "grp": r.grp, "url": r.url,
+            "w0": r.w0, "dw": r.dw, "f": [None if v is None or not np.isfinite(v) else float(v) for v in r.f]})
+    return out
+
+
 def write_js(path: Path, call: str, payload) -> int:
     txt = f"{call}{json.dumps(payload, separators=(',', ':'), allow_nan=False)});\n"
     path.write_text(txt)
@@ -360,6 +378,7 @@ def main():
     sources = [s for s in C.SOURCES if s in set(ph["source"])]
     add_source_columns(cat, ph, sources)
     cat["shard"] = np.arange(len(cat)) // C.SHARD_SIZE
+    spec = spectra_shards(cat)
 
     meta = {
         "mode": a.mode,
@@ -370,6 +389,7 @@ def main():
         "stats": stats_block(),
         "notes": notes(a.mode),
         "regions": ["WFD", *C.DDF_FIELDS],
+        "spectra": {"n_objects": int((cat["n_spec_plot"] > 0).sum()), "n_spectra": int(cat["n_spec_plot"].sum())},
         "debass": {"n": int(cat["debass"].notna().sum()), "statuses": list(C.DEBASS_STATUSES),
                    "updated": (datetime.fromtimestamp(C.DEBASS_NORM.stat().st_mtime, timezone.utc).date().isoformat()
                                if C.DEBASS_NORM.exists() else None)},
@@ -421,6 +441,14 @@ def main():
     for sh, objs in shards.items():
         size += write_js(data / "lc" / f"{sh:03d}.js", f"TNSX.onShard({sh},", objs)
     n_lc = len(shards)
+    if (data / "spec").exists():
+        shutil.rmtree(data / "spec")
+    if spec:
+        (data / "spec").mkdir(parents=True)
+        for sh, objs in spec.items():
+            size += write_js(data / "spec" / f"{sh:03d}.js", f"TNSX.onSpec({sh},", objs)
+        print(f"[{a.mode}] spectra: {meta['spectra']['n_spectra']} TNS spectra of {meta['spectra']['n_objects']} objects "
+              f"in {len(spec)} files")
     print(f"[{a.mode}] wrote {out}/data: {len(cat):,} objects, {n_lc} shards, "
           f"{len(ph):,} points, {size / 1e6:.1f} MB")
     for s in sources:

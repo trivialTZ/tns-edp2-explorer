@@ -12,6 +12,7 @@ cd "$(dirname "$0")/.."
 PY=${PY:-$HOME/.venvs/debass_py313/bin/python}
 $PY build/fetch_tns_phot.py --normalize-only
 (cd build && $PY fetch_debass.py) || echo "DEBASS sheet not refreshed; keeping the cached list"
+(cd build && $PY fetch_tns_spectra.py) || echo "TNS spectra not refreshed; keeping the cached files"
 (cd build && $PY fetch_edp2_coadd.py)   # private: DP2 deep-coadd footprint per object (cached TAP download)
 (cd build && $PY assemble.py --mode public --encrypt-edp2 && python3 check_public.py ../docs && $PY assemble.py --mode private)
 git add docs/data
