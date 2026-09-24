@@ -25,7 +25,7 @@ FASTDB's processing version.
 Rubin DP2 catalog products are proprietary for Rubin data-rights holders under
 the [Rubin Data Policy](https://ls.st/rdo-013) (RDO-13, DPOL-506 and DPOL-516),
 so they are excluded from this repo. `build/check_public.py` blocks them in
-the pre-commit hook and in CI. The private build is written to
+the pre-commit hook (and in CI once `ci/check-public.yml` is enabled). The private build is written to
 `rubin_hackathon/reports/tns_edp2_explorer_private/site/`. You open it from
 disk, and it may be shared only with data-rights holders.
 
