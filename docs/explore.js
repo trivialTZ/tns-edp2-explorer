@@ -6,6 +6,7 @@
   var E = { page: 0, pageSize: 100, built: false, ptsTab: null, open: {}, facetMore: {}, find: {} };
   var PAGE_SIZES = [50, 100, 250, 500];
   var HW = 280, HH = 44;   // facet histogram viewBox
+  var COLS_KEY = 'tnsx-cols-v2';   // v2: region and DEBASS columns; older saved choices would hide them
 
   // ------------------------------------------------------------------ columns
   function columnDefs() {
@@ -17,6 +18,8 @@
     c.push({ id: 'type', label: 'Type', on: true }, { id: 'z', label: 'Redshift', num: true, on: true },
       { id: 'disc_mjd', label: 'Discovered', sub: 'UTC', on: true }, { id: 'disc_mag', label: 'Disc. mag', sub: 'filter', num: true, on: true },
       { id: 'group', label: 'Group', on: true });
+    if (U.has('region')) c.push({ id: 'region', label: 'Region', sub: 'WFD / DDF', on: true, title: 'DDF: covered by visits aimed at an LSST Deep Drilling Field; WFD: everything else' });
+    if (U.has('debass')) c.push({ id: 'debass', label: 'DEBASS', on: true, title: 'DEBASS follow-up status (sheet “Following?” = FINISHED or YES)' });
     if (U.has('n_spec')) c.push({ id: 'n_spec', label: 'Spectra', num: true, on: true });
     S.srcKeys.forEach(function (s) { c.push({ id: 'n_' + s, label: U.srcShort(s), sub: 'measurements', num: true, src: s, on: true, title: U.srcLabel(s) }); });
     if (U.has('n_visits_active')) c.push({ id: 'n_visits_active', label: 'Pointings', sub: 'active / all', num: true, on: true,
@@ -39,7 +42,7 @@
     return c;
   }
   function visibleCols() {
-    var chosen = F.state.cols || (U.lsGet('tnsx-cols') ? U.lsGet('tnsx-cols').split(',') : null);
+    var chosen = F.state.cols || (U.lsGet(COLS_KEY) ? U.lsGet(COLS_KEY).split(',') : null);
     return E.cols.filter(function (c) {
       if (c.cone) return !!(F.last && F.last.sep);
       if (c.always) return true;
@@ -72,6 +75,7 @@
         (v.sym ? U.symbolSvg(v.sym, 'currentColor') : '') + '<span class="l" title="' + esc(v.label) + '">' + esc(v.label) + '</span><span class="n">0</span></label>';
     }).join('') + '</div>';
     if (d.show && d.values.length > d.show) h += '<button type="button" class="linkbtn facet-more" data-more="' + d.id + '"></button>';
+    if (d.note) h += '<p class="facet-note">' + esc(d.note) + '</p>';
     return h;
   }
   function numWidget(d, withTitle) {
@@ -90,8 +94,10 @@
     var h = '<div class="rail-search">' + U.icon('search', 2) + '<input type="search" class="input" id="f-q" placeholder="Name, internal name or Rubin ID" aria-label="Filter by TNS name, internal name or Rubin diaObjectId (6+ digits)" autocomplete="off" spellcheck="false"></div>';
     var cat = F.byId, num = F.byId;
     h += facetShell('type', cat.type.label, catBody(cat.type), true);
+    h += facetShell('cg', cat.cg.label, catBody(cat.cg), false);
     h += facetShell('pre', cat.pre.label, catBody(cat.pre), true);
     h += facetShell('src', cat.src.label, catBody(cat.src), true);
+    ['reg', 'debass', 'rid'].forEach(function (id) { if (cat[id]) h += facetShell(id, cat[id].label, catBody(cat[id]), cat[id].open); });
     var pts = F.num.filter(function (d) { return d.group === 'pts'; });
     if (pts.length) {
       E.ptsTab = E.ptsTab || pts[0].id;
@@ -161,6 +167,8 @@
       '<section class="results" aria-label="Results">' +
       '<div class="results-head"><div><h1>Explore</h1><p class="rcount" id="rcount" aria-live="polite"></p></div>' +
       '<div class="rtools"><button type="button" class="btn filters-btn" id="open-filters" aria-controls="rail" aria-expanded="false">' + U.icon('filter', 2) + 'Filters<span class="ct-inline"></span></button>' +
+      '<span class="seg" role="radiogroup" aria-label="Show results as"><label><input type="radio" name="xview" value=""><span>Table</span></label>' +
+      '<label><input type="radio" name="xview" value="sky"><span>Sky</span></label></span>' +
       '<label class="sr-only" for="sort-sel">Sort by</label><select class="select" id="sort-sel">' +
       sortOptions().map(function (o) { return '<option value="' + esc(o[0]) + '">' + (o[0] ? 'Sort: ' : 'Sort: ') + esc(o[1]) + '</option>'; }).join('') + '</select>' +
       '<span class="pop-anchor"><button type="button" class="btn" id="cols-btn" aria-haspopup="true" aria-expanded="false" aria-controls="cols-pop">' + U.icon('columns', 1.8) + 'Columns</button>' +
@@ -169,7 +177,10 @@
       '<button type="button" class="btn" id="csv-btn" title="Download all filtered rows as CSV">' + U.icon('download', 1.9) + 'CSV</button></div></div>' +
       '<div class="chips" id="chips" aria-label="Active filters"></div>' +
       '<div class="card table-card"><div class="table-wrap" id="twrap"><table class="data clickable" id="rtable"><thead></thead><tbody></tbody></table></div>' +
-      '<div class="pager" id="pager"></div></div></section></div>';
+      '<div class="pager" id="pager"></div></div>' +
+      '<div class="card map-card" id="xsky-card" hidden><div class="map-head"><div class="legend" id="xsky-legend"></div>' +
+      '<span class="muted" style="font-size:12px">RA 0h at centre · dotted line: Galactic plane</span></div>' +
+      '<div class="skymap" id="xsky" role="img" aria-label="Sky map of the filtered transients"><div class="sk"></div></div></div></section></div>';
     wire(root);
     E.built = true;
   }
@@ -237,6 +248,9 @@
       var c = E.chips[+b.getAttribute('data-chip')];
       if (c) { c.remove(); update(true); var nb = $('#chips button[data-chip]'); if (nb) nb.focus(); }
     });
+    $all('input[name="xview"]', root).forEach(function (r) {
+      r.addEventListener('change', function () { F.state.view = r.value; pushUrl(); render(); });
+    });
     $('#sort-sel', root).addEventListener('change', function (e) { F.state.sort = e.target.value; F.state.dir = ''; update(true); });
     $('#rtable', root).addEventListener('click', function (e) {
       var sb = e.target.closest('.sortbtn');
@@ -272,7 +286,7 @@
     pop.addEventListener('change', function (e) {
       var ids = $all('input[data-col]', pop).filter(function (x) { return x.checked; }).map(function (x) { return x.getAttribute('data-col'); });
       F.state.cols = ids;
-      U.lsSet('tnsx-cols', ids.join(','));
+      U.lsSet(COLS_KEY, ids.join(','));
       pushUrl(); renderTable();
     });
     pop.addEventListener('keydown', function (e) { if (e.key === 'Escape') { pop.hidden = true; cb.setAttribute('aria-expanded', 'false'); cb.focus(); } });
@@ -293,9 +307,9 @@
     if (F.rangeActive(r)) F.state.rng[id] = r; else delete F.state.rng[id];
   }
   function clearAll() {
-    var keepSort = F.state.sort, keepDir = F.state.dir, keepCols = F.state.cols;
+    var keepSort = F.state.sort, keepDir = F.state.dir, keepCols = F.state.cols, keepView = F.state.view;
     F.state = F.blank();
-    F.state.sort = keepSort; F.state.dir = keepDir; F.state.cols = keepCols;
+    F.state.sort = keepSort; F.state.dir = keepDir; F.state.cols = keepCols; F.state.view = keepView;
     E.find = {};
     $all('.facet-find').forEach(function (x) { x.value = ''; });
     syncControls();
@@ -334,6 +348,7 @@
     var q = $('#f-q'); if (q && document.activeElement !== q) q.value = F.state.q || '';
     ['ra', 'dec', 'rad'].forEach(function (k) { var el = $('#f-' + k); if (el && document.activeElement !== el) el.value = F.state[k] || ''; });
     $all('input[name="srcmode"]').forEach(function (r) { r.checked = (r.value === 'any') === !F.state.srcAll; });
+    $all('input[name="xview"]').forEach(function (r) { r.checked = r.value === (F.state.view || ''); });
     $('#sort-sel').value = F.state.sort || '';
     if ($('#sort-sel').selectedIndex < 0) $('#sort-sel').selectedIndex = 0;
   }
@@ -454,6 +469,10 @@
       case 'disc_mag': v = V(i, 'disc_mag');
         return '<td class="num">' + U.fx(v, 2) + (V(i, 'disc_filter') ? ' <span class="muted">' + esc(V(i, 'disc_filter')) + '</span>' : '') + '</td>';
       case 'group': return '<td>' + esc(V(i, 'group') || '') + '</td>';
+      case 'region': v = V(i, 'region') || 'WFD';
+        return '<td>' + (v === 'WFD' ? '<span class="muted">WFD</span>' : '<span class="typ ddf">' + esc(U.regionLabel(v)) + '</span>') + '</td>';
+      case 'debass': v = V(i, 'debass');
+        return '<td>' + (v ? '<span class="pill debass">' + esc(K.DEBASS_LABEL[v] || v) + '</span>' : '<span class="none">—</span>') + '</td>';
       case 'n_spec': v = V(i, 'n_spec'); return '<td class="num"' + (V(i, 'spec_types') ? ' title="' + esc(V(i, 'spec_types')) + '"' : '') + '>' + (v > 0 ? U.fint(v) : '<span class="zero">0</span>') + '</td>';
       case 'n_visits_active': return '<td class="num">' + U.fint(V(i, 'n_visits_active')) + (U.has('n_visits') ? ' <span class="muted">/ ' + U.fint(V(i, 'n_visits')) + '</span>' : '') + '</td>';
       case 'edp2_sep': v = V(i, 'edp2_sep'); return '<td class="num">' + (U.isNum(v) ? '<span' + (v > S.matchR ? ' class="muted"' : '') + '>' + U.fx(v, 2) + '</span>' : '<span class="none">—</span>') + '</td>';
@@ -574,7 +593,25 @@
     syncPos();
     syncControls();
     buildChips();
-    renderTable();
+    var sky = F.state.view === 'sky';
+    $('.table-card').hidden = sky;
+    $('#xsky-card').hidden = !sky;
+    if (sky) drawSky(); else renderTable();
+  }
+  // Sky view: the filtered rows over every other transient in the catalogue.
+  function drawSky() {
+    var res = F.last.result, on = new Uint8Array(S.N), other = [];
+    for (var k = 0; k < res.length; k++) on[res[k]] = 1;
+    for (var i = 0; i < S.N; i++) if (!on[i]) other.push(i);
+    $('#xsky-legend').innerHTML = '<span class="li"><span class="dot" style="background:var(--dot-data)"></span>Matching the filters · ' + U.fint(res.length) + '</span>' +
+      (other.length ? '<span class="li"><span class="dot" style="background:var(--dot-none)"></span>Other transients · ' + U.fint(other.length) + '</span>' : '');
+    X.ensurePlotly().then(function () {
+      if (F.state.view !== 'sky' || S.view !== 'explore') return;
+      X.skyMap($('#xsky'), [{ idx: other, dot: '--dot-none', size: 3.2, opacity: 0.9 },
+        { idx: res, dot: '--dot-data', size: X.skySize(res.length), opacity: 0.92 }]);
+    }).catch(function () {
+      $('#xsky').innerHTML = '<div class="lc-msg">The sky map needs Plotly from cdn.jsdelivr.net, which did not load.</div>';
+    });
   }
 
   // ------------------------------------------------------------------ view API
@@ -597,6 +634,8 @@
         E.page = 0;
         F.evaluate();
         render();
+      } else if (prev !== 'explore' && F.state.view === 'sky') {
+        drawSky();
       } else if (prev !== 'explore') {
         // back from an object: show the page that holds it
         var pos = S.lastObj != null ? F.last.result.indexOf(S.lastObj) : -1;
@@ -606,6 +645,7 @@
         if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
       }
       U.$all('a[data-nav="explore"]').forEach(function (a) { a.setAttribute('href', X.exploreHash()); });
-    }
+    },
+    onTheme: function () { if (F.state.view === 'sky') drawSky(); }
   };
 })();

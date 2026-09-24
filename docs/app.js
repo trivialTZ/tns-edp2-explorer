@@ -46,9 +46,11 @@
     // in private or unlocked mode. Always strings: ~1e17 integers exceed Number precision.
     RID_LABEL: { alert: 'Rubin diaObjectId (alert stream)', dp2: 'Rubin DP2 diaObjectId' },
     RID_MIN_PREFIX: 6,
+    // DEBASS follow-up status (build/fetch_debass.py): the sheet's "Following?" value.
+    DEBASS_LABEL: { FINISHED: 'Finished', YES: 'Following' },
     // Columns the object page knows how to show; anything else is listed as key: value.
     KNOWN_COLS: ['name', 'prefix', 'ra', 'dec', 'type', 'z', 'group', 'disc_mjd', 'disc_mag', 'disc_filter', 'internal',
-      'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types',
+      'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'region', 'debass',
       'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc']
   };
   var FAM_EXACT = { R: 'R', I: 'I', V: 'V', B: 'B', L: 'L' };
@@ -122,6 +124,9 @@
   U.srcShort = function (k) { return K.SRC_SHORT[k] || U.srcLabel(k); };
   U.cssEscape = function (s) { return window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/[^\w-]/g, '\\$&'); };
   U.isSN = function (t) { return !!t && /^(SN|SLSN)/.test(t); };
+  // Class group of a TNS type: Ia (any subtype), SN (other supernovae), other, none (untyped).
+  U.classGroup = function (t) { return !t ? 'none' : /^SN Ia/.test(t) ? 'Ia' : U.isSN(t) ? 'SN' : 'other'; };
+  U.regionLabel = function (r) { return !r || r === 'WFD' ? 'WFD' : 'DDF · ' + r; };
   U.plural = function (n, one, many) { return U.fint(n) + ' ' + (n === 1 ? one : (many || one + 's')); };
 
   var famCache = new Map();
@@ -582,6 +587,11 @@
       for (var k = 0; k < ids.length; k++) if (ids[k].id.indexOf(q) === 0) { out.push({ i: i, id: ids[k].id, kind: ids[k].kind }); break; }
     }
     return out;
+  };
+  X.hasRid = function (i, kind) {
+    var ids = S.rids[i] || [];
+    for (var k = 0; k < ids.length; k++) if (ids[k].kind === kind) return true;
+    return false;
   };
   X.ridHit = function (i, q) {
     var ids = S.rids[i];

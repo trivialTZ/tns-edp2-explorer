@@ -99,6 +99,8 @@ LC (columnar, one per source per object; arrays have equal length):
  "stats": {...aggregate cross-match numbers, from summary.json...},
  "notes": [strings shown on the About page],
  "team_access": true,   // only when the build ships the encrypted layer, data/edp2/
+ "regions": ["WFD", DDF field names...],
+ "debass": {"n", "statuses", "updated"},
  "hosts": {"n_rows", "n_images", "fits_withheld"}}   // only when host products exist
 ```
 
@@ -125,6 +127,8 @@ merges it into catalogue columns at load (null where an object has none).
 | alert_ids | Rubin alert-stream diaObjectIds (via Fink LSST), comma separated ("" if none); searchable by exact value or a prefix of 6+ digits, and `#/object/<id>` resolves them |
 | n_spec | number of TNS-reported spectra (0 if none) |
 | spec_types | TNS spectra as "date instrument (group)", semicolon separated ("" if none); TNS gives no per-spectrum class, the object class is `type` |
+| region | `WFD`, or the LSST Deep Drilling Field (`COSMOS`, `ECDFS`, `EDFS`, `ELAIS-S1`, `XMM-LSS`) when a dp2.Visit aimed within 1 deg of that field's centre (common.DDF_FIELDS) has its centre within 1.75 deg of the object. dp2.Visit has no survey-programme column, so `WFD` also holds commissioning science-validation fields |
+| debass | `FINISHED` or `YES` from the DEBASS sheet's `Following?` column (build/fetch_debass.py; TNS name, else position <= 2"), null otherwise |
 | shard | lightcurve shard index |
 
 Private builds add `n_edp2_dia, n_edp2_fp, t0_edp2_dia, t1_edp2_dia,

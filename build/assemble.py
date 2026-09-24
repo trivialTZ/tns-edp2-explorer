@@ -92,6 +92,11 @@ def build_catalog(mode: str) -> pd.DataFrame:
         s = pd.read_parquet(p).drop_duplicates("name").set_index("name")
         cat["n_spec"] = cat["name"].map(s["n_spectra"]).fillna(0).astype(int)
         cat["spec_types"] = cat["name"].map(s["spec_types"]).fillna("").astype(str)
+    cat["region"] = survey_region(cat)
+    cat["debass"] = pd.Series(pd.NA, index=cat.index, dtype="string")
+    if C.DEBASS_NORM.exists():
+        d = pd.read_parquet(C.DEBASS_NORM).drop_duplicates("name").set_index("name")
+        cat["debass"] = cat["name"].map(d["debass"]).astype("string")
     if mode == "private":
         p = C.PRIVATE_NORM / "edp2_objects.parquet"
         if p.exists():
@@ -106,6 +111,33 @@ def build_catalog(mode: str) -> pd.DataFrame:
         cat["edp2_lead"] = cat["name"].map(e["lead_days"])
         cat["edp2_tc"] = cat["name"].map(e["time_consistent"])
     return cat.sort_values(["disc_mjd", "name"]).reset_index(drop=True)
+
+
+def _unit(ra, dec) -> np.ndarray:
+    ra, dec = np.radians(np.asarray(ra, float)), np.radians(np.asarray(dec, float))
+    return np.stack([np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)], -1)
+
+
+def survey_region(cat: pd.DataFrame) -> list[str]:
+    """DDF field name when a dp2.Visit aimed at an LSST Deep Drilling Field covers the object, else "WFD".
+
+    dp2.Visit has no survey-programme column, so this is positional (common.DDF_FIELDS). "WFD"
+    therefore also holds the commissioning science-validation fields outside the DDFs.
+    """
+    v = pd.read_csv(C.VISITS_CSV, usecols=["ra", "dec"])
+    vu = _unit(v["ra"], v["dec"])
+    field = np.full(len(v), "", dtype=object)
+    for name, centres in C.DDF_FIELDS.items():
+        for c in centres:
+            near = vu @ _unit(*c) >= np.cos(np.radians(C.DDF_POINTING_DEG))
+            field[near & (field == "")] = name
+    ddf = field != ""
+    vu, field = vu[ddf], field[ddf]
+    cos_r, out = np.cos(np.radians(C.TICK_RADIUS_DEG)), []
+    for o in _unit(cat["ra"], cat["dec"]):
+        f = pd.Series(field[vu @ o >= cos_r])
+        out.append(f.value_counts().index[0] if len(f) else "WFD")
+    return out
 
 
 def load_phot(mode: str, cat: pd.DataFrame) -> pd.DataFrame:
@@ -175,6 +207,10 @@ def notes(mode: str) -> list[str]:
         "have no DiaObject within 30\".",
         "Rubin alert-stream diaObjectIds and DP2 catalog diaObjectIds are different ID spaces; "
         "alerts are associated by position (2\").",
+        "Survey region: DDF when a dp2.Visit pointed within 1 deg of an LSST Deep Drilling Field centre "
+        "(COSMOS, ECDFS, EDFS, ELAIS-S1, XMM-LSS) covers the object, otherwise WFD. dp2.Visit has no "
+        "survey-programme column, so WFD here also includes commissioning science-validation fields.",
+        "DEBASS: objects whose `Following?` status in the DEBASS follow-up sheet is FINISHED or YES.",
     ]
     if mode == "public":
         n.insert(0, "Rubin DP2 (EDP2) catalog photometry is proprietary under the Rubin Data Policy "
@@ -324,6 +360,10 @@ def main():
         "sources": source_meta(ph, sources),
         "stats": stats_block(),
         "notes": notes(a.mode),
+        "regions": ["WFD", *C.DDF_FIELDS],
+        "debass": {"n": int(cat["debass"].notna().sum()), "statuses": list(C.DEBASS_STATUSES),
+                   "updated": (datetime.fromtimestamp(C.DEBASS_NORM.stat().st_mtime, timezone.utc).date().isoformat()
+                               if C.DEBASS_NORM.exists() else None)},
     }
     if a.encrypt_edp2:
         meta["team_access"] = True   # the site offers the password-unlocked layer in data/edp2/

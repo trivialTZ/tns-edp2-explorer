@@ -28,9 +28,25 @@ TNS_DUMP = HACK / "data/truth/tns_public.parquet"                 # 2026-07-07 T
 # Read-only here. `in_good_edp2_list` in it is DP2-derived and is never published (build/hosts.py).
 HOSTS_DIR = Path(os.environ.get("TNSX_HOSTS_DIR", HACK / "reports/tns_edp2_hosts/site"))
 ENV_FILE = Path(os.environ.get("TNSX_ENV_FILE", HACK / ".env"))   # TNS creds, RSP_TOKEN: never print
+# DEBASS follow-up sample (link-shared Google Sheet). `Following?` FINISHED / YES = DEBASS target.
+DEBASS_SHEET_CSV = ("https://docs.google.com/spreadsheets/d/1JPIAXjcy-maVeNMkImRHFnhfoo2ulJQzHkCJOL0AbKs"
+                    "/export?format=csv&gid=0")
+DEBASS_STATUSES = ("FINISHED", "YES")
+# LSST Deep Drilling Field centres (deg). A catalogue object is "DDF" when a dp2.Visit pointed
+# within DDF_POINTING_DEG of one of these covers it (centre within TICK_RADIUS_DEG); else "WFD".
+DDF_FIELDS = {
+    "COSMOS": [(150.1, 2.1819444)],
+    "ECDFS": [(53.125, -28.1)],
+    "EDFS": [(58.97, -49.28), (63.6, -47.6)],
+    "ELAIS-S1": [(9.45, -44.0)],
+    "XMM-LSS": [(35.708333, -4.75)],
+}
+DDF_POINTING_DEG = 1.0
+TICK_RADIUS_DEG = 1.75   # visit centre to object; the site's pointing ticks use the same radius
 
 CACHE = REPO / "cache"
 NORM = CACHE / "norm"
+DEBASS_NORM = NORM / "debass.parquet"                             # name, debass, debass_snid
 SITE = REPO / "docs"                                              # served by GitHub Pages
 
 PRIVATE = Path(os.environ.get("TNSX_PRIVATE_DIR", HACK / "reports/tns_edp2_explorer_private"))

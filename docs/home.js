@@ -38,9 +38,10 @@
       stat(U.fint(S.totalPoints), 'Photometry points', 'detections, forced photometry and limits') +
       stat(U.fint(S.nTyped), 'Spectroscopically typed', pct + '% carry a TNS classification') + '</div>' +
       '<section class="section" aria-labelledby="h-sky"><div class="section-head"><h2 id="h-sky">The sky</h2>' +
-      '<p>Every transient on a Mollweide projection of the celestial sphere, east to the left. Click one to open its lightcurve.</p></div>' +
-      '<div class="card map-card"><div class="map-head"><div class="legend" id="sky-legend"></div><span class="muted" style="font-size:12px">RA 0h at centre · dotted line: Galactic plane</span></div>' +
-      '<div class="skymap" id="skymap" role="img" aria-label="Sky map of all transients"><div class="sk"></div></div></div></section>' +
+      '<p>Every transient on a Mollweide projection of the celestial sphere, east to the left. Narrow it by survey region or by what an object has; click a dot to open its lightcurve.</p></div>' +
+      '<div class="card map-card"><div class="sky-tools" id="sky-tools"></div>' +
+      '<div class="map-head"><div class="legend" id="sky-legend"></div><span class="muted" style="font-size:12px">RA 0h at centre · dotted line: Galactic plane</span></div>' +
+      '<div class="skymap" id="skymap" role="img" aria-label="Sky map of transients"><div class="sk"></div></div></div></section>' +
       '<section class="section" aria-labelledby="h-disc"><div class="section-head"><h2 id="h-disc">Discoveries over time</h2>' +
       '<p>TNS discoveries per week. The shaded band is the EDP2 visit window. Click a week to explore it.</p></div>' +
       '<div class="card hist-card"><svg class="dhist" id="dhist" role="img" aria-label="Histogram of discovery dates by week"></svg></div></section>' +
@@ -50,6 +51,9 @@
       '<p>Spectroscopically typed supernovae with the most measurements across sources.</p></div><div class="feat-grid" id="feat">' + featuredCards() + '</div></section>' +
       '</div>';
     X.attachSuggest($('#hero-q'), $('#hero-suggest'), { limit: 7 });
+    renderSkyTools();
+    wireSkyTools();
+    drawMap();                     // counts and legend now; the map itself once Plotly loads
     $('#hero-random').addEventListener('click', function () {
       var pool = [];
       for (var i = 0; i < S.N; i++) if (S.srcKeys.some(function (s) { return U.V(i, 'n_' + s) > 0; })) pool.push(i);
@@ -219,72 +223,121 @@
     });
   }
 
-  // ------------------------------------------------------------------ sky map (Plotly scattergeo, Mollweide)
-  function lonOf(ra) { return ((-ra % 360) + 540) % 360 - 180; }   // RA 0h at centre, east to the left
-  function galacticPlane() {
-    var r = Math.PI / 180, raG = 192.85948 * r, decG = 27.12825 * r, lN = 122.93192 * r, lon = [], lat = [], prev = null;
-    for (var l = 0; l <= 360; l += 2) {
-      var dl = lN - l * r;
-      var dec = Math.asin(Math.cos(decG) * Math.cos(dl));
-      var ra = raG + Math.atan2(Math.sin(dl), -Math.sin(decG) * Math.cos(dl));
-      var lo = lonOf((ra / r + 360) % 360);
-      if (prev !== null && Math.abs(lo - prev) > 180) { lon.push(null); lat.push(null); }
-      lon.push(lo); lat.push(dec / r); prev = lo;
+  // ------------------------------------------------------------------ sky map: survey region + "has" chips
+  // The region is all / WFD / DDF; chips AND together. Each maps onto Explore facets, so
+  // "Open in Explore" carries the same selection over.
+  H.sky = { reg: '', on: {} };
+  var REGIONS = [['', 'All'], ['WFD', 'WFD'], ['DDF', 'DDF']];
+  function hasData(i) {
+    for (var a = 0; a < S.srcKeys.length; a++) if (U.V(i, 'n_' + S.srcKeys[a]) > 0) return true;
+    return false;
+  }
+  function skyDefs() {
+    if (H.defs) return H.defs;
+    var d = [], team = S.isPrivate, offer = !S.isPrivate && !!S.meta.team_access;
+    var ek = S.srcKeys.filter(function (k) { return /^edp2_/.test(k); });
+    if (U.has('alert_ids')) d.push({ id: 'rid', label: 'Rubin alert diaObjectId', test: function (i) { return X.hasRid(i, 'alert'); }, p: [['rid', 'yes']] });
+    if (team && U.has('edp2_id')) d.push({ id: 'dp2', label: 'DP2 diaObjectId', priv: true, test: X.F.isMatched, p: [['em', '1']] });
+    else if (offer) d.push({ id: 'dp2', label: 'DP2 diaObjectId', locked: true });
+    if (team && ek.length) {
+      d.push({ id: 'edp2', label: 'EDP2 photometry', priv: true, test: function (i) { return ek.some(function (k) { return U.V(i, 'n_' + k) > 0; }); },
+        p: ek.map(function (k) { return ['src', k]; }).concat([['srcmode', 'any']]) });
+    } else if (offer) d.push({ id: 'edp2', label: 'EDP2 photometry', locked: true });
+    if (U.has('debass')) d.push({ id: 'debass', label: 'DEBASS target', test: function (i) { return !!U.V(i, 'debass'); }, p: [['debass', 'FINISHED'], ['debass', 'YES']] });
+    d.push({ id: 'ia', label: 'SN Ia', test: function (i) { return U.classGroup(U.V(i, 'type')) === 'Ia'; }, p: [['cg', 'Ia']] });
+    d.push({ id: 'lc', label: 'Lightcurve data', test: hasData, p: S.srcKeys.map(function (k) { return ['src', k]; }).concat([['srcmode', 'any']]) });
+    H.defs = d;
+    return d;
+  }
+  function isWfd(i) { return (U.V(i, 'region') || 'WFD') === 'WFD'; }
+  // One pass: the selection, and what each chip and region option would give if chosen.
+  function skyEval() {
+    var defs = skyDefs().filter(function (d) { return !d.locked; });
+    var on = defs.filter(function (d) { return H.sky.on[d.id]; }), reg = U.has('region') ? H.sky.reg : '';
+    var sel = [], other = [], chipN = {}, regN = { '': 0, WFD: 0, DDF: 0 };
+    defs.forEach(function (d) { chipN[d.id] = 0; });
+    for (var i = 0; i < S.N; i++) {
+      var ok = true;
+      for (var a = 0; a < on.length && ok; a++) ok = on[a].test(i);
+      var w = isWfd(i), inReg = !reg || (reg === 'WFD') === w;
+      if (ok) {
+        regN['']++; regN[w ? 'WFD' : 'DDF']++;
+        if (inReg) for (var b = 0; b < defs.length; b++) if (H.sky.on[defs[b].id] || defs[b].test(i)) chipN[defs[b].id]++;
+      }
+      if (ok && inReg) sel.push(i); else other.push(i);
     }
-    return { lon: lon, lat: lat };
+    return { sel: sel, other: other, chipN: chipN, regN: regN, active: on.length > 0 || !!reg };
+  }
+  function skyLink() {
+    var p = new URLSearchParams(), on = skyDefs().filter(function (d) { return H.sky.on[d.id] && !d.locked; });
+    var edp2 = on.some(function (d) { return d.id === 'edp2'; });   // EDP2 photometry already implies lightcurve data
+    on.forEach(function (d) {
+      if (d.id === 'lc' && edp2) return;
+      d.p.forEach(function (kv) { if (!(kv[0] === 'srcmode' && p.has('srcmode'))) p.append(kv[0], kv[1]); });
+    });
+    if (H.sky.reg === 'WFD') p.append('reg', 'WFD');
+    else if (H.sky.reg === 'DDF') (X.F.ddfFields || []).forEach(function (f) { p.append('reg', f); });
+    return '#/explore?' + p.toString();
+  }
+  function renderSkyTools() {
+    var h = '';
+    if (U.has('region')) {
+      h += '<span class="seg sm" role="radiogroup" aria-label="Survey region">' + REGIONS.map(function (r) {
+        return '<label title="' + (r[0] === 'DDF' ? 'LSST Deep Drilling Fields: ' + esc((X.F.ddfFields || []).join(', ')) : r[0] === 'WFD' ? 'Outside the Deep Drilling Fields' : 'Every region') + '">' +
+          '<input type="radio" name="skyreg" value="' + r[0] + '"' + (H.sky.reg === r[0] ? ' checked' : '') + '><span>' + r[1] +
+          '<b class="n" data-regn="' + (r[0] || 'all') + '"></b></span></label>';
+      }).join('') + '</span>';
+    }
+    h += '<span class="tchips" role="group" aria-label="Only transients with">' + skyDefs().map(function (d) {
+      if (d.locked) return '<button type="button" class="tchip locked" data-sky-lock title="Unlock team access to filter by Rubin DP2 data">' + U.icon('lock', 2) + esc(d.label) + '</button>';
+      return '<button type="button" class="tchip' + (d.priv ? ' priv' : '') + '" data-sky="' + d.id + '" aria-pressed="' + (H.sky.on[d.id] ? 'true' : 'false') + '">' +
+        esc(d.label) + '<span class="n"></span></button>';
+    }).join('') + '</span>';
+    $('#sky-tools').innerHTML = h;
+  }
+  function wireSkyTools() {
+    var box = $('#sky-tools');
+    box.addEventListener('change', function (e) { if (e.target.name === 'skyreg') { H.sky.reg = e.target.value; drawMap(); } });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      if (b.hasAttribute('data-sky-lock')) { if (X.team && X.team.openDialog) X.team.openDialog(); return; }
+      var id = b.getAttribute('data-sky');
+      if (H.sky.on[id]) delete H.sky.on[id]; else H.sky.on[id] = true;
+      b.setAttribute('aria-pressed', H.sky.on[id] ? 'true' : 'false');
+      drawMap();
+    });
+    $('#sky-legend').addEventListener('click', function (e) {
+      if (!e.target.closest('[data-sky-clear]')) return;
+      H.sky = { reg: '', on: {} };
+      renderSkyTools();
+      drawMap();
+    });
   }
   function drawMap() {
-    var el = $('#skymap');
-    if (!el || !window.Plotly) return;
-    var sk = el.querySelector(':scope > .sk');
-    if (sk) sk.remove();
-    var C = S.C, yes = { lon: [], lat: [], i: [] }, no = { lon: [], lat: [], i: [] };
-    for (var i = 0; i < S.N; i++) {
-      var r = S.rows[i], has = false;
-      for (var a = 0; a < S.srcKeys.length; a++) if (r[C['n_' + S.srcKeys[a]]] > 0) { has = true; break; }
-      var t = has ? yes : no;
-      t.lon.push(lonOf(r[C.ra])); t.lat.push(r[C.dec]); t.i.push(i);
+    var ev = skyEval(), legend, layers;
+    U.$all('[data-sky]').forEach(function (b) {
+      var n = ev.chipN[b.getAttribute('data-sky')] || 0;
+      b.querySelector('.n').textContent = U.fint(n);
+      b.classList.toggle('zero', !n && b.getAttribute('aria-pressed') !== 'true');
+    });
+    U.$all('[data-regn]').forEach(function (b) { var k = b.getAttribute('data-regn'); b.textContent = U.fint(ev.regN[k === 'all' ? '' : k]); });
+    if (ev.active) {
+      legend = '<span class="li"><span class="dot" style="background:var(--dot-data)"></span>Selected · ' + U.fint(ev.sel.length) + '</span>' +
+        '<span class="li"><span class="dot" style="background:var(--dot-none)"></span>Other transients · ' + U.fint(ev.other.length) + '</span>' +
+        (ev.sel.length ? '<a class="li go" href="' + esc(skyLink()) + '">Open ' + U.fint(ev.sel.length) + ' in Explore' + U.icon('arrow', 2) + '</a>' : '') +
+        '<button type="button" class="linkbtn" data-sky-clear>Clear</button>';
+      layers = [{ idx: ev.other, dot: '--dot-none', size: 3.2, opacity: 0.9 }, { idx: ev.sel, dot: '--dot-data', size: X.skySize(ev.sel.length), opacity: 0.92 }];
+    } else {
+      var yes = [], no = [];
+      for (var i = 0; i < S.N; i++) (hasData(i) ? yes : no).push(i);
+      legend = '<span class="li"><span class="dot" style="background:var(--dot-data)"></span>With lightcurve data · ' + U.fint(yes.length) + '</span>' +
+        '<span class="li"><span class="dot" style="background:var(--dot-none)"></span>No photometry in this build · ' + U.fint(no.length) + '</span>';
+      layers = [{ idx: no, dot: '--dot-none', size: 3.4, opacity: 0.95 }, { idx: yes, dot: '--dot-data', size: 4.4, opacity: 0.9 }];
     }
-    var line = U.cssVar('--line'), strong = U.cssVar('--line-strong'), muted = U.cssVar('--muted');
-    var gp = galacticPlane();
-    var labLon = [], labLat = [], labTxt = [];
-    [0, 4, 8, 16, 20].forEach(function (h) { labLon.push(lonOf(h * 15)); labLat.push(3); labTxt.push(h + 'h'); });
-    [-60, -30, 30, 60].forEach(function (d) { labLon.push(4); labLat.push(d); labTxt.push((d > 0 ? '+' : '−') + Math.abs(d) + '°'); });
-    var traces = [
-      { type: 'scattergeo', mode: 'lines', lon: gp.lon, lat: gp.lat, line: { color: muted, width: 1, dash: 'dot' }, hoverinfo: 'skip', connectgaps: false },
-      { type: 'scattergeo', mode: 'text', lon: labLon, lat: labLat, text: labTxt, textfont: { family: 'Inter, sans-serif', size: 10, color: muted }, hoverinfo: 'skip', textposition: 'middle right' },
-      { type: 'scattergeo', mode: 'markers', lon: no.lon, lat: no.lat, customdata: no.i, hoverinfo: 'none',
-        marker: { size: 3.4, color: U.cssVar('--dot-none'), opacity: 0.95, line: { width: 0 } } },
-      { type: 'scattergeo', mode: 'markers', lon: yes.lon, lat: yes.lat, customdata: yes.i, hoverinfo: 'none',
-        marker: { size: 4.4, color: U.cssVar('--dot-data'), opacity: 0.9, line: { width: 0 } } }
-    ];
-    var layout = {
-      margin: { l: 0, r: 0, t: 0, b: 0 }, paper_bgcolor: 'rgba(0,0,0,0)', showlegend: false, dragmode: false,
-      geo: { projection: { type: 'mollweide' }, bgcolor: 'rgba(0,0,0,0)', showland: false, showcoastlines: false, showocean: false,
-        showlakes: false, showrivers: false, showcountries: false, showsubunits: false, showframe: true, framecolor: strong, framewidth: 1,
-        lonaxis: { showgrid: true, gridcolor: line, gridwidth: 1, dtick: 30 }, lataxis: { showgrid: true, gridcolor: line, gridwidth: 1, dtick: 30 } },
-      font: { family: 'Inter, sans-serif' }
-    };
-    window.Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true, scrollZoom: false });
-    $('#sky-legend').innerHTML = '<span class="li"><span class="dot" style="background:var(--dot-data)"></span>With lightcurve data · ' + U.fint(yes.i.length) + '</span>' +
-      '<span class="li"><span class="dot" style="background:var(--dot-none)"></span>No photometry in this build · ' + U.fint(no.i.length) + '</span>';
-    if (!H.mapDrawn) {
-      el.on('plotly_hover', function (ev) {
-        var p = ev.points && ev.points[0];
-        if (!p || p.customdata == null) return;
-        var i = p.customdata, t = U.V(i, 'type');
-        var pts = S.srcKeys.filter(function (s) { return U.V(i, 'n_' + s) > 0; }).map(function (s) { return U.srcShort(s); });
-        U.hover.show('<div class="hc-t"><span class="pfx">' + esc(U.V(i, 'prefix') || '') + '</span>' + esc(U.V(i, 'name')) + '</div>' +
-          '<div class="hc-r">' + (t ? esc(t) + ' · ' : '') + esc(U.niceDate(U.V(i, 'disc_mjd'))) + '</div>' +
-          '<div class="hc-m">' + (pts.length ? esc(pts.join(' · ')) : 'no photometry') + '</div>', ev.event.clientX, ev.event.clientY);
-        el.style.cursor = 'pointer';
-      });
-      el.on('plotly_unhover', function () { U.hover.hide(); el.style.cursor = ''; });
-      el.on('plotly_click', function (ev) {
-        var p = ev.points && ev.points[0];
-        if (p && p.customdata != null) X.go('#/object/' + encodeURIComponent(U.V(p.customdata, 'name')));
-      });
-    }
+    $('#sky-legend').innerHTML = legend;
+    if (!window.Plotly) return;
+    X.skyMap($('#skymap'), layers);
     H.mapDrawn = true;
   }
 

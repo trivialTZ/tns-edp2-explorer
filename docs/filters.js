@@ -1,16 +1,16 @@
 /* TNS x EDP2 Explorer — filter model and engine.
  *
  * State lives in F.state and round-trips through the URL (#/explore?…). Evaluation is a
- * single pass that records, per object, a bit mask of the filters it fails. Facet counts
- * then follow the CELLxGENE rule: a facet's counts reflect every *other* active filter
- * (rows whose mask is 0 or only that facet's bit).
+ * single pass that records, per object, how many active filters it fails and, when it is
+ * exactly one, which. Facet counts then follow the CELLxGENE rule: a facet's counts reflect
+ * every *other* active filter (rows that fail nothing, or fail only that facet).
  */
 (function () {
   'use strict';
   var X = window.TNSXApp, S = X.S, U = X.U, K = X.K;
   var F = X.F = { cat: [], num: [], byId: {}, state: null, last: null };
 
-  function blank() { return { q: '', ra: '', dec: '', rad: '', sel: {}, rng: {}, srcAll: true, sort: '', dir: '', cols: null }; }
+  function blank() { return { q: '', ra: '', dec: '', rad: '', sel: {}, rng: {}, srcAll: true, sort: '', dir: '', cols: null, view: '' }; }
   F.blank = blank;
 
   // ------------------------------------------------------------------ facet definitions
@@ -47,11 +47,8 @@
   F.init = function () {
     var C = S.C, rows = S.rows;
     F.cat = []; F.num = []; F.byId = {};
-    var bit = 0;
-    function addCat(d) { d.bit = 1 << bit++; d.kind = 'cat'; F.cat.push(d); F.byId[d.id] = d; }
-    function addNum(d) { d.bit = 1 << bit++; d.kind = 'num'; F.num.push(d); F.byId[d.id] = d; }
-    F.qBit = 1 << bit++;
-    F.coneBit = 1 << bit++;
+    function addCat(d) { d.kind = 'cat'; F.cat.push(d); F.byId[d.id] = d; }
+    function addNum(d) { d.kind = 'num'; F.num.push(d); F.byId[d.id] = d; }
 
     // --- categorical
     var jt = C.type, tc = new Map();
@@ -81,6 +78,28 @@
         for (var a = 0; a < srcCols.length; a++) if (r[srcCols[a]] > 0) out.push(S.srcKeys[a]);
         return out;
       } });
+    // survey region (build/assemble.py survey_region): "WFD" or an LSST Deep Drilling Field name
+    if (C.region !== undefined) {
+      var jr = C.region, rc = new Map();
+      for (i = 0; i < S.N; i++) { var rg = rows[i][jr] || 'WFD'; rc.set(rg, (rc.get(rg) || 0) + 1); }
+      var regs = Array.from(rc.keys()).sort(function (a, b) { return (b === 'WFD') - (a === 'WFD') || a.localeCompare(b); });
+      F.ddfFields = regs.filter(function (r) { return r !== 'WFD'; });
+      addCat({ id: 'reg', label: 'Survey region', open: true, get: function (i) { return rows[i][jr] || 'WFD'; },
+        values: regs.map(function (r) { return { v: r, label: U.regionLabel(r) }; }),
+        note: 'DDF: covered by visits aimed at an LSST Deep Drilling Field. WFD: everything else, including commissioning fields.' });
+    }
+    if (C.debass !== undefined) {
+      var jdb = C.debass;
+      addCat({ id: 'debass', label: 'DEBASS follow-up', open: true, get: function (i) { return rows[i][jdb] || '__none__'; },
+        values: [{ v: 'FINISHED', label: K.DEBASS_LABEL.FINISHED }, { v: 'YES', label: K.DEBASS_LABEL.YES }, { v: '__none__', label: 'Not a DEBASS target' }],
+        note: 'DEBASS sheet “Following?” = FINISHED or YES.' });
+    }
+    if (C.alert_ids !== undefined) {
+      addCat({ id: 'rid', label: 'Rubin alert diaObjectId', open: false, get: function (i) { return X.hasRid(i, 'alert') ? 'yes' : 'no'; },
+        values: [{ v: 'yes', label: 'Has an alert-stream ID' }, { v: 'no', label: 'No alert-stream ID' }] });
+    }
+    addCat({ id: 'cg', label: 'Class group', open: false, get: function (i) { return U.classGroup(rows[i][jt]); },
+      values: [{ v: 'Ia', label: 'SN Ia (all subtypes)' }, { v: 'SN', label: 'Other supernovae' }, { v: 'other', label: 'Other classified' }, { v: 'none', label: 'Untyped' }] });
     var jg = C.group, gc = new Map();
     for (i = 0; i < S.N; i++) { var g = jg === undefined ? '' : String(rows[i][jg] == null ? '' : rows[i][jg]); gc.set(g, (gc.get(g) || 0) + 1); }
     addCat({ id: 'grp', label: 'Reporting group', search: true, open: false, show: 8,
@@ -106,7 +125,7 @@
       if (C.host_fit !== undefined) hostFacet('hfit', 'Host fit status', 'host_fit', HF_LABEL);
     }
     if (S.isPrivate) {
-      addCat({ id: 'em', label: 'EDP2 match', private: true, open: true,
+      addCat({ id: 'em', label: 'DP2 diaObjectId (EDP2 match)', private: true, open: true,
         values: [{ v: '1', label: 'Matched (≤ ' + S.matchR + '″)' }, { v: '0', label: 'Not matched' }],
         get: function (i) { return F.isMatched(i) ? '1' : '0'; } });
       var jtc = C.edp2_tc;
@@ -258,6 +277,7 @@
     if (st.sort) p.set('sort', st.sort);
     if (st.dir) p.set('dir', st.dir);
     if (st.cols) p.set('cols', st.cols.join(','));
+    if (st.view === 'sky') p.set('view', 'sky');
     return p;
   };
   F.fromParams = function (p) {
@@ -292,6 +312,7 @@
     st.dir = p.get('dir') === 'asc' || p.get('dir') === 'desc' ? p.get('dir') : '';
     var cols = p.get('cols');
     st.cols = cols ? cols.split(',').filter(Boolean) : null;
+    st.view = p.get('view') === 'sky' ? 'sky' : '';
     return st;
   };
 
@@ -311,7 +332,7 @@
     var preds = [];
     // Names and internal names match as substrings; Rubin diaObjectIds by exact value or a prefix of 6+ digits.
     var qs = String(st.q || '').split(',').map(U.normQuery).filter(Boolean), rq = qs.map(U.isRidQuery);
-    if (qs.length) preds.push({ bit: F.qBit, test: function (i) {
+    if (qs.length) preds.push({ id: 'q', test: function (i) {
       var s = S.search[i];
       for (var a = 0; a < qs.length; a++) if (s.indexOf(qs[a]) >= 0 || (rq[a] && X.ridHit(i, qs[a]))) return true;
       return false;
@@ -321,7 +342,7 @@
       sep = new Float64Array(N).fill(NaN);
       var cr = cone.r / 3600, jra = C.ra, jdec = C.dec;
       var cosd = Math.cos(Math.min(90, Math.abs(cone.dec) + cr) * Math.PI / 180);
-      preds.push({ bit: F.coneBit, test: function (i) {
+      preds.push({ id: 'cone', test: function (i) {
         var r = rows[i];
         if (Math.abs(r[jdec] - cone.dec) > cr) return false;
         var dra = Math.abs(r[jra] - cone.ra); if (dra > 180) dra = 360 - dra;
@@ -338,50 +359,54 @@
       var set = new Set(sel);
       if (d.multi) {
         var all = st.srcAll;
-        preds.push({ bit: d.bit, test: function (i) {
+        preds.push({ id: d.id, test: function (i) {
           var have = d.get(i), hit = 0;
           for (var a = 0; a < have.length; a++) if (set.has(have[a])) hit++;
           return all ? hit === set.size : hit > 0;
         } });
-      } else preds.push({ bit: d.bit, test: function (i) { return set.has(d.get(i)); } });
+      } else preds.push({ id: d.id, test: function (i) { return set.has(d.get(i)); } });
     });
     F.num.forEach(function (d) {
       var r = st.rng[d.id];
       if (!F.rangeActive(r)) return;
       var lo = r[0], hi = r[1];
-      preds.push({ bit: d.bit, test: function (i) {
+      preds.push({ id: d.id, test: function (i) {
         var v = d.get(i);
         if (!U.isNum(v)) return false;
         return (!U.isNum(lo) || v >= lo) && (!U.isNum(hi) || v <= hi);
       } });
     });
 
-    var mask = new Int32Array(N), result = [], np = preds.length;
+    // Per row: how many filters it fails (0, 1 or 2 = "two or more") and, when exactly one, which.
+    var fails = new Uint8Array(N), which = new Int16Array(N).fill(-1), result = [], np = preds.length, at = {};
+    preds.forEach(function (p, k) { at[p.id] = k; });
     for (var i = 0; i < N; i++) {
-      var m = 0;
-      for (var a = 0; a < np; a++) if (!preds[a].test(i)) m |= preds[a].bit;
-      mask[i] = m;
-      if (m === 0) result.push(i);
+      var nf = 0;
+      for (var a = 0; a < np && nf < 2; a++) if (!preds[a].test(i)) { nf++; which[i] = a; }
+      fails[i] = nf;
+      if (nf === 0) result.push(i);
     }
     // facet counts: every other filter applies
     var counts = {}, fg = {};
     F.cat.forEach(function (d) { counts[d.id] = {}; });
     F.num.forEach(function (d) { fg[d.id] = new Array(d.edges.length - 1).fill(0); });
     var srcD = F.byId.src, srcAnd = st.srcAll && (st.sel.src || []).length > 0;
+    var own = function (d) { return at[d.id] === undefined ? -2 : at[d.id]; };
+    var catOwn = F.cat.map(own), numOwn = F.num.map(own);
     for (i = 0; i < N; i++) {
-      m = mask[i];
-      if (m !== 0 && (m & (m - 1)) !== 0) continue;           // fails two or more filters
+      var nfi = fails[i], w = which[i];
+      if (nfi > 1) continue;                                   // fails two or more filters
       for (a = 0; a < F.cat.length; a++) {
         var d = F.cat[a];
-        if (m !== 0 && m !== d.bit) continue;
-        if (d === srcD && srcAnd && m !== 0) continue;         // AND: adding a source never rescues a row
+        if (nfi && w !== catOwn[a]) continue;
+        if (d === srcD && srcAnd && nfi) continue;             // AND: adding a source never rescues a row
         var c = counts[d.id], v = d.get(i);
         if (d.multi) { for (var b = 0; b < v.length; b++) c[v[b]] = (c[v[b]] || 0) + 1; }
         else c[v] = (c[v] || 0) + 1;
       }
       for (a = 0; a < F.num.length; a++) {
         var n = F.num[a];
-        if (m !== 0 && m !== n.bit) continue;
+        if (nfi && w !== numOwn[a]) continue;
         var x = n.get(i);
         if (U.isNum(x)) fg[n.id][binOf(n.edges, x)]++;
       }
@@ -391,7 +416,7 @@
     if (sk === '_sep' && !sep) sk = '_npts';
     if (sk !== '_sep' && sk !== 'name' && sk !== '_npts' && !U.has(sk)) sk = '_npts';
     dir = st.dir === 'asc' ? 1 : st.dir === 'desc' ? -1 : F.naturalDir(sk);
-    F.last = { result: F.sortRows(result, sk, dir, sep), counts: counts, fg: fg, sep: sep, cone: cone, sortKey: sk, sortDir: dir, mask: mask };
+    F.last = { result: F.sortRows(result, sk, dir, sep), counts: counts, fg: fg, sep: sep, cone: cone, sortKey: sk, sortDir: dir };
     return F.last;
   };
 

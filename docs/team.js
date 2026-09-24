@@ -10,7 +10,7 @@
  * becomes) public, with a short notice.
  *
  * X.team: ready (Promise of the decrypted catalogue payload, or null), apply(catalog, payload),
- * shard(n), mergeShard(pub, enc), initUi(), unlocked.
+ * shard(n), mergeShard(pub, enc), initUi(), openDialog(), unlocked.
  */
 (function () {
   'use strict';
@@ -328,6 +328,7 @@
     });
     (input.disabled ? box.querySelector('#team-cancel') : input).focus();
   }
+  T.openDialog = function () { if (!T.unlocked && S.meta.mode === 'public' && S.meta.team_access) openDialog(); };
   function closeDialog() {
     if (!dlg) return;
     var ret = dlg.ret;

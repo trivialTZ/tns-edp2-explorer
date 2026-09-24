@@ -5,11 +5,13 @@
 # is unchanged, so only changed files are committed; add --rotate for a new key.
 # Host-galaxy products (common.HOSTS_DIR) are read on every run: SN Ia-list hosts are
 # public (docs/data/hosts/), all other host rows go only into the encrypted layer.
+# DEBASS membership comes from the link-shared DEBASS sheet (FINISHED / YES only).
 # The pre-commit hook re-runs check_public.py before anything is committed.
 set -e
 cd "$(dirname "$0")/.."
 PY=${PY:-$HOME/.venvs/debass_py313/bin/python}
 $PY build/fetch_tns_phot.py --normalize-only
+(cd build && $PY fetch_debass.py) || echo "DEBASS sheet not refreshed; keeping the cached list"
 (cd build && $PY assemble.py --mode public --encrypt-edp2 && python3 check_public.py ../docs && $PY assemble.py --mode private)
 git add docs/data
 if git diff --cached --quiet; then

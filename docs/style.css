@@ -205,6 +205,11 @@ main:focus { outline: none; }
 .pill.outline { background: transparent; border: 1px solid var(--line-strong); }
 .pill.private { background: var(--private); color: var(--private-ink); }
 .pill.diag { background: transparent; border: 1px solid currentColor; color: var(--warn); }
+.pill.debass { background: var(--accent-soft); color: var(--accent); }
+a.pill { text-decoration: none; transition: filter var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+a.pill:hover { text-decoration: none; filter: brightness(0.96); }
+a.pill.outline:hover { border-color: var(--accent); color: var(--ink); }
+.typ.ddf { color: var(--accent); font-weight: 500; }
 .pfx { color: var(--muted); font-weight: 500; }
 
 .input, .select {
@@ -307,6 +312,22 @@ html[data-route="home"] #boot-generic { display: none; }
 .legend .dot { width: 8px; height: 8px; border-radius: 50%; }
 .skymap { height: 540px; }
 .skymap .sk { height: 100%; border-radius: var(--r-md); }
+.sky-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 0 4px 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+.sky-tools .seg b.n, .tchip .n { font-weight: 500; color: var(--faint); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.sky-tools .seg input:checked + span b.n { color: var(--muted); }
+.tchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: var(--card); color: var(--ink-2); font: 500 13px var(--font); cursor: pointer; white-space: nowrap; transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.tchip:hover { border-color: var(--accent); color: var(--ink); }
+.tchip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tchip[aria-pressed="true"] .n { color: inherit; opacity: .8; }
+.tchip.zero { color: var(--faint); }
+.tchip.priv[aria-pressed="true"] { background: var(--private); border-color: var(--private); color: var(--private-ink); }
+.tchip.priv:not([aria-pressed="true"]) { border-style: dashed; }
+.tchip.locked { color: var(--muted); border-style: dashed; }
+.tchip.locked svg { width: 13px; height: 13px; }
+.legend a.go { color: var(--accent); font-weight: 600; }
+.legend a.go svg { width: 13px; height: 13px; }
+.legend .linkbtn { color: var(--muted); }
 .hist-card { padding: 20px 24px 16px; }
 .dhist { width: 100%; height: 200px; display: block; }
 .dhist .bar { fill: var(--brand); opacity: 0.85; transition: opacity var(--dur) var(--ease); cursor: pointer; }

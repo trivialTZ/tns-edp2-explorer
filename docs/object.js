@@ -81,6 +81,13 @@
   function extLink(href, label, title) {
     return '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + esc(label) + U.icon('ext', 2) + '</a>';
   }
+  // DEBASS status and survey region, each a link to Explore filtered the same way.
+  function tagLinks(i) {
+    var h = '', db = V(i, 'debass'), rg = V(i, 'region');
+    if (db) h += '<a class="pill debass" href="#/explore?debass=FINISHED&amp;debass=YES" title="DEBASS follow-up target (sheet status ' + esc(db) + '). Show all DEBASS targets">DEBASS · ' + esc(K.DEBASS_LABEL[db] || db) + '</a>';
+    if (rg) h += '<a class="pill outline" href="#/explore?reg=' + encodeURIComponent(rg) + '" title="' + (rg === 'WFD' ? 'Outside the LSST Deep Drilling Fields' : 'Covered by visits aimed at this LSST Deep Drilling Field') + '. Show all transients here">' + esc(U.regionLabel(rg)) + '</a>';
+    return h;
+  }
   function heroHtml(i) {
     var name = V(i, 'name'), pre = V(i, 'prefix'), type = V(i, 'type'), z = V(i, 'z');
     var ra = V(i, 'ra'), dec = V(i, 'dec'), disc = V(i, 'disc_mjd');
@@ -89,7 +96,7 @@
     var sexa = U.raHms(ra) + ' ' + U.decDms(dec);
     var h = '<header class="obj-hero"><div class="obj-title"><h1 tabindex="-1">' + (pre ? '<span class="pfx">' + esc(pre) + '</span>' : '') + esc(name) + '</h1>' +
       '<div class="tags">' + (type ? '<span class="pill">' + esc(type) + '</span>' : '<span class="pill outline">Untyped</span>') +
-      (U.isNum(z) ? '<span class="muted tabular">z = ' + U.fx(z, 4) + '</span>' : '') + '</div></div>';
+      tagLinks(i) + (U.isNum(z) ? '<span class="muted tabular">z = ' + U.fx(z, 4) + '</span>' : '') + '</div></div>';
     h += '<div class="coords">' +
       '<span class="coord"><span class="lbl">RA</span><span class="mono">' + U.fx(ra, 6) + '°</span>' + copyBtn(U.fx(ra, 6), 'RA in degrees') + '</span>' +
       '<span class="coord"><span class="lbl">Dec</span><span class="mono">' + U.signed(dec, 6) + '°</span>' + copyBtn((dec >= 0 ? '+' : '-') + Math.abs(dec).toFixed(6), 'Dec in degrees') + '</span>' +
