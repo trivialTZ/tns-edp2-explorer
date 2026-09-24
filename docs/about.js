@@ -36,7 +36,7 @@
       '<li><strong>Association.</strong> Candidates from the Pan-STARRS1 stack catalogue (north of −30°) and the Legacy Surveys DR10 Tractor catalogue are ranked by their separation in units of the ' +
       'directional light radius (DLR), with a morphology term and a weight for being hostless. The DLR here is a circularised light scale (2.5 × the Tractor half-light radius, or the Pan-STARRS1 Kron radius), ' +
       'not a true elliptical DLR; d_DLR is the separation divided by it.</li>' +
-      '<li><strong>Tiers.</strong> <em>Associated</em> means secure (both catalogues agree, or one catalogue is secure on its own) or probable (the two catalogues’ best candidates agree within 2″ but the heuristic gates are not met; accepted as a diagnostic tier). ' +
+      '<li><strong>Tiers.</strong> <em>Associated</em> means secure (both catalogues agree, or one catalogue is secure on its own) or probable (the two catalogues’ best candidates agree within 2″ but the heuristic gates are not met; accepted for this sample as a diagnostic tier). ' +
       '<em>Ambiguous</em> means the catalogues disagree, several candidates compete, confidence is low, or a duplicate primary needs review: the figure shows the leading candidate dashed, and no fit is run. ' +
       '<em>Not searched</em> means no catalogue covers the position.</li>' +
       '<li><strong>SED fits.</strong> Bagpipes with a delayed-τ star-formation history, Calzetti dust with free A_V, nebular emission and free metallicity, at a fixed redshift, on Pan-STARRS1 grizy aperture photometry or Legacy grz plus unWISE W1/W2 fluxes. ' +

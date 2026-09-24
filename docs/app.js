@@ -24,7 +24,7 @@
     PRIVATE_BANNER: 'PROPRIETARY Rubin DP2 data. For Rubin data-rights holders only. Do not redistribute.',
     // Band families (SCHEMA.md "Band labels"). LSST u..y use Rubin-like hues re-stepped per
     // theme; ZTF/TNS filters share the colour of the matching band. Broad white-light filters
-    // (w, L, Clear) are neutral. The teal UI accent (style.css) is never drawn inside a plot.
+    // (w, L, Clear) are neutral. The Rubin-teal UI colour (style.css) is never drawn in a lightcurve.
     FAMILIES: ['u', 'g', 'r', 'i', 'z', 'y', 'o', 'c', 'w', 'L', 'V', 'B', 'R', 'I', 'Clear', 'other'],
     FAM_COLORS: {
       light: { u: '#1f6fe0', g: '#45b35f', r: '#b3261a', i: '#b88300', z: '#d23d98', y: '#8a3b2c',
