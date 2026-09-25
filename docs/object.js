@@ -690,7 +690,7 @@
   function clfCardHtml(i) {
     if (!U.has('clf_n') || !(V(i, 'clf_n') > 0 || U.isNum(V(i, 'mdb_psn')))) return '';
     return '<section class="card clf-card" aria-labelledby="clf-h"><div class="lc-head"><h2 id="clf-h">Classifications</h2><div class="lc-ctl" id="clf-ctl"></div></div>' +
-      '<p class="clf-lede">What each broker classifier said as the detections came in, with the metaDEBASS meta-layer’s confidences and its trust in the brokers. ' +
+      '<p class="clf-lede">What each broker classifier said as the detections came in, with the metaDEBASS meta-layer’s confidences. ' +
       '<a href="#/classifiers">How often are they right?</a></p><div id="clf-body"><div class="sk" style="height:120px"></div></div></section>';
   }
   function loadClf(i) {
@@ -794,9 +794,9 @@
         (hasQ ? '<th class="num" title="metaDEBASS’s calibrated trust that this call is right">metaDEBASS trust</th>' : '') + '<th class="num">At ' + unit + '</th></tr></thead><tbody>' + latest + '</tbody></table></div>' +
       '<p class="clf-foot">' + (tru ? 'TNS classification: <b>' + esc(tru) + '</b>. ' : 'No TNS classification yet. ') +
       (t.b === 'alert' ? 'metaDEBASS scores Rubin objects with at least one positive detection; every alert of this one is a negative difference, so only broker outputs are shown. ' : '') +
-      (t.mdb ? '<a href="https://github.com/trivialTZ/rubin_hackathon" target="_blank" rel="noopener noreferrer">metaDEBASS</a> is a meta-layer, not another classifier: it reports calibrated confidences for follow-up ranking and, where it has a trust model, how far to trust each broker’s call. ' +
+      (t.mdb ? '<a href="https://github.com/trivialTZ/rubin_hackathon" target="_blank" rel="noopener noreferrer">metaDEBASS</a> is a meta-layer, not another classifier: it reports calibrated confidences for follow-up ranking and how far to trust each broker’s call (trust is not shown yet: its levels are not calibrated for this catalogue). ' +
         'A P(SN Ia) of 0.4 means about four in ten objects scored like this are SNe Ia, not that this one is something else.' +
-        (t.sv === 'LSST' ? ' For Rubin alerts, v11 has no Ia training labels yet, so it gives P(supernova) only.' : '') + ' ' : '') +
+        (t.sv === 'LSST' ? ' For Rubin alerts its SN Ia score does not yet beat chance on live alerts, so it gives P(supernova) only.' : '') + ' ' : '') +
       'All scores are research outputs, not classifications.</p>';
     body.onmousemove = function (e) {
       var c = e.target.closest('[data-tip]');

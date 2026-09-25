@@ -6,7 +6,7 @@ data/tnsx_eval_*, tools/run_fetch.py + tools/run_score.sh): per survey,
 
   gold/snapshots_<sv>.parquet            one row per object id and detection number (<= 20)
   silver_<sv>/broker_events.parquet      native broker outputs (class names, probabilities)
-  scores/predictions_tnsx_<sv>_v11scc.parquet   metaDEBASS fusion_v11 (SCC-trained stack) probabilities per row
+  scores/predictions_tnsx_<sv>_v12.parquet      metaDEBASS fusion_v12 probabilities and trust per row
 
 Every input is public: Rubin alert-stream and ZTF alert data, broker outputs, TNS types.
 
@@ -20,9 +20,12 @@ given), O = not a supernova, n = not Ia (EarlySNIa below threshold).
 
 metaDEBASS is a meta-layer, not a classifier: its rows (clf = "mdb") carry no call, only its
 calibrated confidences P(supernova) (conf) and, for ZTF, P(SN Ia) (p_ia). Its other output, trust
-in a broker's call at that detection, is the `trust` column of that broker's rows (only where a
-trust model exists; in the v11 run, the ALeRCE ZTF stamp classifiers). It is not graded in the
-scorecard; its benchmark lives in the metaDEBASS repository.
+in a broker's call at that detection, is the `trust` column of that broker's rows. It is left empty
+for now (SHOW_TRUST): v12's Fink trust ranks calls well on the Rubin benchmark but its level is set
+by Rubin training rows that are ~97% not supernovae, so a correct Fink supernova call on a real SN
+reads ~0.12, which would mislead on a catalogue of TNS-reported transients. The v12 ALeRCE stamp
+trust model predicts "non-Ia supernova" for a stamp supernova call, so it is never used for a call.
+metaDEBASS is not graded in the scorecard; its benchmark lives in the metaDEBASS repository.
 
 Usage:
   python build/classifiers.py [--eval DIR]
@@ -46,19 +49,16 @@ EVAL = C.HACK / "data" / "tnsx_eval_20260924"
 OUT = C.NORM / "classifiers.parquet"
 OBJ = C.NORM / "classifier_objects.parquet"
 CARD = C.NORM / "classifier_scorecard.json"
-# metaDEBASS v11 train/cal splits: objects in them are in-sample for the model.
-# metaDEBASS predictions scored with the SCC-trained v11 stack (rubin_hackathon/models_scc_v11: followup, trust,
-# anchor_blend, conformal). models/*_v11 in that repo is a local smoke-scale build and must not be used here.
-MDB_TAG = "v11scc"
-MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v11.json", C.HACK / "data/gold/split_fusion_v11.local.json",
-              C.HACK / "data/gold/split_fusion_v11_scc.json"]
+# metaDEBASS fusion v12 (SCC-trained; rubin_hackathon models/*_fusion_v12), scored on SCC with the local experts run
+# for every object (jobs/run_tnsx_v12_score.sh), as in training. Objects in its train/cal split are in-sample.
+MDB_TAG = "v12"
+MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v12_scc.json"]
 CHECKPOINTS = [3, 5, 10]
-# metaDEBASS trust columns in the predictions -> the broker they rate
-TRUST = {"q__alerce__stamp_classifier": "alerce/stamp_classifier",
-         "q__alerce__stamp_classifier_2025_beta": "alerce/stamp_classifier_2025_beta",
-         "q__alerce__stamp_classifier_rubin_beta": "alerce/stamp_classifier_rubin_beta",
-         "q__fink_lsst__snn": "fink_lsst/snn", "q__fink_lsst__cats": "fink_lsst/cats",
-         "q__fink_lsst__early_snia": "fink_lsst/early_snia", "q__lasair__sherlock": "lasair/sherlock"}
+# metaDEBASS trust columns -> the broker they rate. Each is P(the object is a supernova) (trust target is_sn),
+# so trust in a call is q for a supernova call and 1 - q for a not-a-supernova call. Off until the trust level is
+# calibrated for this catalogue's population (see the module docstring).
+TRUST_SN = {"q__fink_lsst__snn": "fink_lsst/snn", "q__fink_lsst__cats": "fink_lsst/cats"}
+SHOW_TRUST = False
 JD_MJD = 2400000.5
 
 # Fink LSST CATS broad classes (ELAsTiCC taxonomy prefixes: 111-115 SN, 121-124 fast, 131-135 long,
@@ -70,7 +70,7 @@ SN_CLASSES = {"SNIa", "SNIbc", "SNII", "SLSN", "SESN", "SNIIn", "SNIIb", "SN"}
 # ia (Ia or not). timing: alert (per detection), static (fixed from the first detection or host
 # context), latest (object-level snapshot from the full lightcurve: shown, never scored early).
 EXPERTS = [
-    {"key": "mdb", "label": "metaDEBASS", "sub": "meta-layer, fusion v11", "surveys": ["LSST", "ZTF"], "kind": "meta", "timing": "alert",
+    {"key": "mdb", "label": "metaDEBASS", "sub": "meta-layer, fusion v12", "surveys": ["LSST", "ZTF"], "kind": "meta", "timing": "alert",
      "ref": "https://github.com/trivialTZ/rubin_hackathon"},
     {"key": "fink_lsst/snn", "label": "Fink SuperNNova", "sub": "SN vs other", "surveys": ["LSST"], "kind": "sn", "timing": "alert",
      "ref": "https://doi.org/10.1093/mnras/stz3312"},
@@ -152,9 +152,13 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
     g["object_id"] = g["object_id"].astype(str)
     pr = pd.read_parquet(pred_p)
     pr["object_id"] = pr["object_id"].astype(str)
-    qcols = [c for c in TRUST if c in pr.columns and pr[c].notna().any()]
+    qcols = [c for c in TRUST_SN if c in pr.columns and pr[c].notna().any()]
     g = g.merge(pr[["object_id", "n_det", "p_snia", "p_nonia", "p_other", *qcols]], on=["object_id", "n_det"], how="left")
-    trust_of = {TRUST[c]: c for c in qcols}
+    trust_of = {TRUST_SN[c]: c for c in qcols}
+
+    def trust(d: dict, key: str, call: str) -> float:
+        q = _f(d.get(trust_of[key])) if SHOW_TRUST and key in trust_of else math.nan
+        return round(q if call == "N" else 1.0 - q, 4) if np.isfinite(q) else math.nan
     stat = static_labels(pd.read_parquet(silv_p).assign(object_id=lambda d: d["object_id"].astype(str))) if silv_p.exists() else {}
     col = lambda k, f: f"proj__{k.replace('/', '__')}__{f}"  # noqa: E731
     rows, objs = [], []
@@ -166,8 +170,8 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
         for d in og.to_dict("records"):
             base = {"name": name, "survey": sv, "object_id": oid, "n_det": int(d["n_det"]),
                     "mjd": round(float(d["alert_jd"]) - JD_MJD, 5) if pd.notna(d["alert_jd"]) else math.nan}
-            # metaDEBASS: confidences only, no call. No P(Ia) for Rubin IDs: v11 applies its ZTF-trained Ia head there,
-            # and on the live LSST benchmark that head does not separate SN Ia from other SNe (AUC ~0.5).
+            # metaDEBASS: confidences only, no call. No P(Ia) for Rubin IDs: on the live Rubin benchmark v12's P(Ia | SN)
+            # does not separate SN Ia from other SNe (AUC 0.55 [0.42, 0.67] at the latest detection).
             pi, pn, po = _f(d.get("p_snia")), _f(d.get("p_nonia")), _f(d.get("p_other"))
             if np.isfinite([pi, pn, po]).all():
                 lab = f"P(SN) {pi + pn:.2f}" + (f" · P(Ia) {pi:.2f}" if sv == "ZTF" else "")
@@ -176,21 +180,23 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
             if sv == "LSST":
                 s = _f(d.get(col("fink_lsst/snn", "raw_snn_sn_vs_others")))
                 if np.isfinite(s):
-                    rows.append({**base, "clf": "fink_lsst/snn", "call": "N" if s >= 0.5 else "O", "conf": round(s, 4), "label": f"P(SN) {s:.2f}"})
+                    c = "N" if s >= 0.5 else "O"
+                    rows.append({**base, "clf": "fink_lsst/snn", "call": c, "conf": round(s, 4), "label": f"P(SN) {s:.2f}",
+                                 "trust": trust(d, "fink_lsst/snn", c)})
                 cc, cs = _f(d.get(col("fink_lsst/cats", "raw_cats_class"))), _f(d.get(col("fink_lsst/cats", "raw_cats_score")))
                 if np.isfinite(cc):
                     nm = CATS.get(int(cc), f"class {int(cc)}")
-                    rows.append({**base, "clf": "fink_lsst/cats", "call": "N" if int(cc) == 11 else "O", "conf": round(cs, 4) if np.isfinite(cs) else math.nan,
-                                 "label": f"{nm} {cs:.2f}" if np.isfinite(cs) else nm})
+                    c = "N" if int(cc) == 11 else "O"
+                    rows.append({**base, "clf": "fink_lsst/cats", "call": c, "conf": round(cs, 4) if np.isfinite(cs) else math.nan,
+                                 "label": f"{nm} {cs:.2f}" if np.isfinite(cs) else nm, "trust": trust(d, "fink_lsst/cats", c)})
                 es = _f(d.get(col("fink_lsst/early_snia", "raw_early_snia_score")))
                 if np.isfinite(es) and es >= 0:
                     rows.append({**base, "clf": "fink_lsst/early_snia", "call": "I" if es >= 0.5 else "n", "conf": round(es, 4), "label": f"P(Ia) {es:.2f}"})
             for key in [e["key"] for e in EXPERTS if e["timing"] in ("static", "latest") and sv in e["surveys"]]:
                 if (oid, key) in stat and (BY_KEY[key]["timing"] == "static" or int(d["n_det"]) == nmax):
                     c, p, lab = stat[(oid, key)]
-                    q = _f(d.get(trust_of[key])) if key in trust_of else math.nan
                     rows.append({**base, "clf": key, "call": c, "conf": round(p, 4) if np.isfinite(p) else math.nan, "label": lab,
-                                 "trust": round(q, 4) if np.isfinite(q) else math.nan})
+                                 "trust": math.nan})
         objs.append({"name": name, "survey": sv, "object_id": oid, "n_det_max": int(og["n_det"].max()),
                      "in_sample": oid in insample, "basis": "det"})
     n_gold = len(objs)

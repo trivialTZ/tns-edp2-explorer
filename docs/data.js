@@ -8,7 +8,7 @@
   var FILE_DESC = {
     'catalog.csv': 'One row per transient: TNS metadata, survey region, DEBASS status, Rubin alert IDs, the Rubin-first comparison and per-source counts.',
     'photometry.csv.gz': 'Every public photometry point on the site: TNS-reported, ZTF (ALeRCE) alerts and forced photometry, Rubin alerts and alert forced photometry (Fink).',
-    'classifiers.csv.gz': 'Broker classifier calls per object and detection number, with metaDEBASS confidences and, where available, its trust in each broker.'
+    'classifiers.csv.gz': 'Broker classifier calls per object and detection number, with metaDEBASS confidences.'
   };
   // References for the data behind the site. Keep in step with About and README.
   var REFS = [
