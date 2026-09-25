@@ -436,7 +436,7 @@ def classifier_shards(cat: pd.DataFrame) -> tuple[dict[int, dict], pd.DataFrame 
 CLF_DL_DESC = {
     "name": "TNS name without prefix", "survey": "LSST (Rubin alert stream) or ZTF", "object_id": "survey object ID (ZTF oid or Rubin alert diaObjectId; read as string)",
     "n_det": "detection number (positive detections, metaDEBASS count; for Rubin IDs metaDEBASS did not score, the alert number)",
-    "mjd": "MJD of that detection", "classifier": "classifier key (mdb = metaDEBASS fusion v12)",
+    "mjd": "MJD of that detection", "classifier": "classifier key (mdb = metaDEBASS fusion v13b)",
     "call": "what a broker classifier says at this detection: SN Ia, SN (not Ia), SN (subtype not given), not SN, not Ia; "
             "empty for metaDEBASS, a meta-layer that makes no call",
     "score": "the classifier's own score for its call; for metaDEBASS its calibrated P(supernova)",
