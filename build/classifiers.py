@@ -6,7 +6,7 @@ data/tnsx_eval_*, tools/run_fetch.py + tools/run_score.sh): per survey,
 
   gold/snapshots_<sv>.parquet            one row per object id and detection number (<= 20)
   silver_<sv>/broker_events.parquet      native broker outputs (class names, probabilities)
-  scores/predictions_tnsx_<sv>_v13b.parquet     metaDEBASS fusion_v13b probabilities and trust per row
+  scores/predictions_tnsx_<sv>_v13f.parquet     metaDEBASS fusion_v13f probabilities and trust per row
 
 Every input is public: Rubin alert-stream and ZTF alert data, broker outputs, TNS types.
 
@@ -21,9 +21,9 @@ given), O = not a supernova, n = not Ia (EarlySNIa below threshold).
 metaDEBASS is a meta-layer, not a classifier: its rows (clf = "mdb") carry no call, only its
 calibrated confidences P(supernova) (conf) and, for ZTF, P(SN Ia) (p_ia). Its other output, trust
 in a broker's call at that detection, is the `trust` column of that broker's rows. It is left empty
-for now (SHOW_TRUST): v13b's Fink trust ranks calls well on the Rubin benchmark (AUC 0.80) but its
+for now (SHOW_TRUST): v13f's Fink trust ranks calls well on the Rubin benchmark (AUC 0.78) but its
 level is set by Rubin training rows that are mostly not supernovae, so Fink supernova calls in this
-catalogue read a median trust of 0.33, which would mislead on TNS-reported transients.
+catalogue read a median trust of about 0.2, which would mislead on TNS-reported transients.
 metaDEBASS is not graded in the scorecard; its benchmark lives in the metaDEBASS repository.
 
 Usage:
@@ -48,11 +48,11 @@ EVAL = C.HACK / "data" / "tnsx_eval_20260924"
 OUT = C.NORM / "classifiers.parquet"
 OBJ = C.NORM / "classifier_objects.parquet"
 CARD = C.NORM / "classifier_scorecard.json"
-# metaDEBASS fusion v13b (SCC-trained on the v12w gold; rubin_hackathon models/*_fusion_v13b, docs/fusion_v13_plan.md),
-# scored on SCC with the local experts run for every object (golds from jobs/run_tnsx_v12_score.sh, scores from
-# jobs/run_fusion_v13.sh step 5). Objects in its train/cal split are in-sample.
-MDB_TAG = "v13b"
-MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v12w_scc.json"]
+# metaDEBASS fusion v13f (SCC-trained on the rebuilt v13c gold; rubin_hackathon models/*_fusion_v13f,
+# docs/fusion_v13_plan.md), scored on SCC with the local experts run for every object (cohort golds rebuilt by
+# jobs/run_fusion_v13c_gold.sh, scores from jobs/run_fusion_v13.sh step 5). Objects in its train/cal split are in-sample.
+MDB_TAG = "v13f"
+MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v13c_scc.json"]
 CHECKPOINTS = [3, 5, 10]
 # metaDEBASS trust columns -> the broker they rate. Each is P(the object is a supernova) (trust target is_sn),
 # so trust in a call is q for a supernova call and 1 - q for a not-a-supernova call. Off until the trust level is
@@ -70,7 +70,7 @@ SN_CLASSES = {"SNIa", "SNIbc", "SNII", "SLSN", "SESN", "SNIIn", "SNIIb", "SN"}
 # ia (Ia or not). timing: alert (per detection), static (fixed from the first detection or host
 # context), latest (object-level snapshot from the full lightcurve: shown, never scored early).
 EXPERTS = [
-    {"key": "mdb", "label": "metaDEBASS", "sub": "meta-layer, fusion v13b", "surveys": ["LSST", "ZTF"], "kind": "meta", "timing": "alert",
+    {"key": "mdb", "label": "metaDEBASS", "sub": "meta-layer, fusion v13f", "surveys": ["LSST", "ZTF"], "kind": "meta", "timing": "alert",
      "ref": "https://github.com/trivialTZ/rubin_hackathon"},
     {"key": "fink_lsst/snn", "label": "Fink SuperNNova", "sub": "SN vs other", "surveys": ["LSST"], "kind": "sn", "timing": "alert",
      "ref": "https://doi.org/10.1093/mnras/stz3312"},
@@ -170,8 +170,8 @@ def rows_for_survey(sv: str, names: dict[str, str], insample: set[str]) -> tuple
         for d in og.to_dict("records"):
             base = {"name": name, "survey": sv, "object_id": oid, "n_det": int(d["n_det"]),
                     "mjd": round(float(d["alert_jd"]) - JD_MJD, 5) if pd.notna(d["alert_jd"]) else math.nan}
-            # metaDEBASS: confidences only, no call. No P(Ia) for Rubin IDs: on the live Rubin benchmark v13b's P(Ia | SN)
-            # does not separate SN Ia from other SNe (AUC 0.48 [0.34, 0.61] at the latest detection).
+            # metaDEBASS: confidences only, no call. No P(Ia) for Rubin IDs: on the live Rubin benchmark v13f's P(Ia | SN)
+            # does not separate SN Ia from other SNe (AUC 0.47 [0.34, 0.60] at the latest detection).
             pi, pn, po = _f(d.get("p_snia")), _f(d.get("p_nonia")), _f(d.get("p_other"))
             if np.isfinite([pi, pn, po]).all():
                 lab = f"P(SN) {pi + pn:.2f}" + (f" · P(Ia) {pi:.2f}" if sv == "ZTF" else "")
