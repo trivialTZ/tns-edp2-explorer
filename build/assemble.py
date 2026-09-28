@@ -666,6 +666,8 @@ def main():
             host_split = (pub, priv, imgs, withheld)
         catalog["hosts"] = t
         meta["hosts"] = {"n_rows": len(shown), "n_images": len(imgs), "fits_withheld": withheld}
+        if (val := H.validation(shown["name"])) is not None:
+            meta["hosts"]["validation"] = val
         print(f"[{a.mode}] hosts: {len(shown)} rows, {len(imgs)} figures in {host_dir}"
               + ("; fit results withheld until the host run completes" if withheld else ""))
     if (data / "lc").exists():

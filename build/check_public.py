@@ -150,6 +150,15 @@ def check_enc_dir(root: Path) -> list[str]:
     return errs
 
 
+def _flat(xs):
+    """Values of a row, including those inside nested lists (host_cands)."""
+    for x in xs:
+        if isinstance(x, list):
+            yield from _flat(x)
+        else:
+            yield x
+
+
 def check_hosts(root: Path, cat: dict | None) -> list[str]:
     """Public host rows only for objects typed SN Ia here; images only for those rows."""
     errs, hosts = [], (cat or {}).get("hosts")
@@ -167,7 +176,7 @@ def check_hosts(root: Path, cat: dict | None) -> list[str]:
         if not_ia:
             errs.append(f"data/catalog.js: {len(not_ia)} public host rows are not TNS-typed SN Ia here "
                         f"(only SN Ia-list hosts may be public), e.g. {not_ia[:3]}")
-        leaky = [r[0] for r in rows if any(isinstance(x, str) and HOST_BAD_VALUE.search(x) for x in r[1:])]
+        leaky = [r[0] for r in rows if any(isinstance(x, str) and HOST_BAD_VALUE.search(x) for x in _flat(r[1:]))]
         if leaky:
             errs.append(f"data/catalog.js: host values mention DP2/EDP2 for {leaky[:3]}")
         if "host_img" in cols:

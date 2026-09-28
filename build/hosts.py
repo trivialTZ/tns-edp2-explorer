@@ -12,7 +12,7 @@ proprietary DP2 detections. So:
   with its images embedded as data URIs in the encrypted shards.
 - in_good_edp2_list itself is never written anywhere.
 
-While any public row's SED fit is still pending, public fit results are withheld
+While any public row's SED fit (leading or second host) is still pending, public fit results are withheld
 (fit_status shown as "pending", no posteriors): the host run fitted sub-lists at
 different times, so partial fit progress correlates with good-EDP2 membership. The
 full values then travel in the encrypted layer, and become public once the run is done.
@@ -36,19 +36,36 @@ FIT_OUTCOMES = {"qc_pass", "qc_fail", "pending", "no_host_redshift", "photometry
 
 # site column -> hosts.parquet column (whitelist; nothing else is ever copied)
 COLS = {
-    "host_status": "host_status", "host_tier": "association_tier", "host_id": "host_id", "host_cat": "host_catalog",
+    "host_status": "host_status", "host_conf": "host_confidence", "host_p": "host_p", "host_pnone": "host_p_hostless",
+    "host_tier": "association_tier", "host_id": "host_id", "host_cat": "host_catalog", "host_xid": "host_alt_id",
     "host_ra": "host_ra", "host_dec": "host_dec", "host_sep": "host_sep_arcsec", "host_dlr": "host_dlr",
-    "host_ddlr": "host_d_dlr", "host_z": "host_z", "host_ztype": "host_z_type", "host_zsrc": "host_z_source",
+    "host_ddlr": "host_d_dlr", "host_morph": "host_morph", "host_mag": "host_mag", "host_magband": "host_mag_band",
+    "host_catz": "host_catalog_z", "host_catztype": "host_catalog_z_type",
+    "host_z": "host_z", "host_ztype": "host_z_type", "host_zsrc": "host_z_source",
     "host_zcat": "host_catalog_zspec", "host_nbands": "n_bands", "host_bands": "bands", "host_phot": "photometry",
     "host_arm": "fit_arm", "host_fit": "fit_status", "host_imgsrc": "img_background", "host_notes": "notes",
+    # second candidate (v2; filled when it has P >= 0.1)
+    "host_2_id": "host2_id", "host_2_cat": "host2_catalog", "host_2_ra": "host2_ra", "host_2_dec": "host2_dec",
+    "host_2_sep": "host2_sep_arcsec", "host_2_dlr": "host2_dlr", "host_2_ddlr": "host2_d_dlr", "host_2_p": "host2_p",
+    "host_2_morph": "host2_morph", "host_2_mag": "host2_mag", "host_2_catz": "host2_catalog_z",
+    "host_2_catztype": "host2_catalog_z_type", "host_2_fit": "host2_fit_status", "host_2_z": "host2_host_z",
+    "host_2_ztype": "host2_host_z_type", "host_2_zsrc": "host2_host_z_source", "host_2_arm": "host2_fit_arm",
+    "host_2_bands": "host2_bands",
+    "host_cands": "candidates",
 }
 for _q, _src in [("logm", "logmass"), ("logsfr", "logsfr"), ("logssfr", "logssfr"), ("age", "age_mw_gyr"), ("av", "av")]:
     for _p in ("p16", "p50", "p84"):
         COLS[f"host_{_q}_{_p}"] = f"{_src}_{_p}"
+        COLS[f"host_2_{_q}_{_p}"] = f"host2_{_src}_{_p}"
 POSTERIOR_COLS = [c for c in COLS if c.endswith(("_p16", "_p50", "_p84"))]
-FIT_COLS = ["host_nbands", "host_bands", "host_phot", "host_arm"] + POSTERIOR_COLS   # blanked while withheld
+FIT_COLS = ["host_nbands", "host_bands", "host_phot", "host_arm", "host_2_arm", "host_2_bands",
+            "host_2_z", "host_2_ztype", "host_2_zsrc"] + POSTERIOR_COLS                  # blanked while withheld
 ROUND = {"host_ra": 6, "host_dec": 6, "host_sep": 3, "host_dlr": 3, "host_ddlr": 3, "host_z": 5, "host_zcat": 5,
+         "host_p": 3, "host_pnone": 3, "host_mag": 2, "host_catz": 4,
+         "host_2_ra": 6, "host_2_dec": 6, "host_2_sep": 3, "host_2_dlr": 3, "host_2_ddlr": 3, "host_2_p": 3,
+         "host_2_mag": 2, "host_2_catz": 4, "host_2_z": 5,
          **{c: 3 for c in POSTERIOR_COLS}}
+CAND_FIELDS = ("id", "cat", "ra", "dec", "sep", "ddlr", "p", "morph", "re", "q", "pa")   # host_cands entries
 BOILERPLATE = {"diagnostic only (science_usable=false)",
                "independent public-data host pipeline, no TITAN code or products"}   # stated on every card
 FORBIDDEN = ("edp2", "good_edp2", "good-edp2", "dp2", "diaobject")                    # never in a public host value
@@ -61,6 +78,7 @@ ZSRC_LABEL = {
     "LS DR10 z_spec": "Legacy Surveys DR10 spectroscopic",
     "LS DR10 photo-z median": "Legacy Surveys DR10 photo-z (median)",
 }
+LIST_COLS = {"host_cands"}              # JSON lists in hosts.parquet -> nested arrays on the site
 
 
 def load(cat: pd.DataFrame) -> pd.DataFrame | None:
@@ -74,8 +92,22 @@ def load(cat: pd.DataFrame) -> pd.DataFrame | None:
     if missing:
         raise SystemExit(f"refusing: {p} lacks columns {sorted(missing)}")
     h = h.drop_duplicates("name")
-    h["host_z_source"] = h["host_z_source"].map(lambda s: ZSRC_LABEL.get(s, s) if isinstance(s, str) else s)
+    for c in ("host_z_source", "host2_host_z_source"):
+        h[c] = h[c].map(lambda s: ZSRC_LABEL.get(s, s) if isinstance(s, str) else s)
     return h[h["name"].isin(set(cat["name"]))].reset_index(drop=True)
+
+
+def validation(names) -> dict | None:
+    """Agreement with TNS-reported host galaxies over `names` (aggregate only), or None."""
+    p = C.HOSTS_DIR / "validation_tns_hostname.csv"
+    if not p.exists():
+        return None
+    v = pd.read_csv(p)
+    v = v[v["name"].astype(str).isin(set(map(str, names)))]
+    if len(v) < 20:
+        return None
+    return {"n": int(len(v)), "lead": round(float(v["v2_lead_ok"].astype(bool).mean()), 3),
+            "top2": round(float(v["v2_top2_ok"].astype(bool).mean()), 3)}
 
 
 def split(h: pd.DataFrame, cat: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, bool]:
@@ -85,7 +117,7 @@ def split(h: pd.DataFrame, cat: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFram
     pub = h[h["in_snia_list"].astype(bool) & public_typed].copy()
     priv = h[~h["name"].isin(set(pub["name"]))].copy()
     assert_public(pub, cat)
-    withheld = bool(pub["fit_status"].eq("pending").any())
+    withheld = bool(pub["fit_status"].eq("pending").any() or pub["host2_fit_status"].eq("pending").any())
     return pub, priv, withheld
 
 
@@ -110,6 +142,27 @@ def _clean(v, nd=None):
     return str(v)
 
 
+def _cands(s):
+    """host_cands: [[id, cat, ra, dec, sep, ddlr, p, morph, re, q, pa], ...] (CAND_FIELDS)."""
+    import json
+    if not isinstance(s, str) or not s:
+        return None
+    out = []
+    for c in json.loads(s):
+        if len(c) != len(CAND_FIELDS):
+            raise ValueError(f"host candidate entry has {len(c)} fields, expected {len(CAND_FIELDS)}")
+        out.append([_clean(x) for x in c])
+    return out or None
+
+
+def _flat(row):
+    for x in row:
+        if isinstance(x, list):
+            yield from _flat(x)
+        else:
+            yield x
+
+
 def _notes(s, withheld: bool):
     if s is None or (isinstance(s, float) and not np.isfinite(s)):
         return None
@@ -124,10 +177,12 @@ def table(rows: pd.DataFrame, img: dict[str, str], withheld: bool = False) -> di
     """{"cols": OUT_COLS, "rows": [...]} for the site. img: name -> "file" | "shard"."""
     out = []
     for r in rows.to_dict("records"):
-        v = {c: _clean(r[src], ROUND.get(c)) for c, src in COLS.items()}
+        v = {c: (_cands(r[src]) if c in LIST_COLS else _clean(r[src], ROUND.get(c))) for c, src in COLS.items()}
         v["host_notes"] = _notes(r["notes"], withheld)
-        if withheld and v["host_fit"] in FIT_OUTCOMES:
-            v["host_fit"] = "pending"
+        if withheld:
+            for f in ("host_fit", "host_2_fit"):
+                if v[f] in FIT_OUTCOMES:
+                    v[f] = "pending"
             for c in FIT_COLS:
                 v[c] = None
         v["host_img"] = img.get(r["name"])
@@ -142,7 +197,7 @@ def public_guard(t: dict) -> None:
     if bad:
         raise AssertionError(f"public host table has forbidden columns {bad}")
     for row in t["rows"]:
-        for x in row:
+        for x in _flat(row):
             if isinstance(x, str) and any(k in x.lower() for k in FORBIDDEN):
                 raise AssertionError(f"public host value for {row[0]} mentions DP2/EDP2")
 

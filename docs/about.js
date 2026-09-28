@@ -33,12 +33,16 @@
       '<p>' + U.fint(n) + ' transients here have a host-galaxy card. It comes from an independent pipeline that uses only public catalogues and imaging: ' +
       'Legacy Surveys DR10 for most objects, with Pan-STARRS1 DR2. It uses no TITAN code or products. Association weights are uncalibrated heuristics, and the fits depend on the model, ' +
       'so treat every number as a diagnostic.</p><ul>' +
-      '<li><strong>Association.</strong> Candidates from the Pan-STARRS1 stack catalogue (north of −30°) and the Legacy Surveys DR10 Tractor catalogue are ranked by their separation in units of the ' +
-      'directional light radius (DLR), with a morphology term and a weight for being hostless. The DLR here is a circularised light scale (2.5 × the Tractor half-light radius, or the Pan-STARRS1 Kron radius), ' +
-      'not a true elliptical DLR; d_DLR is the separation divided by it.</li>' +
-      '<li><strong>Tiers.</strong> <em>Associated</em> means secure (both catalogues agree, or one catalogue is secure on its own) or probable (the two catalogues’ best candidates agree within 2″ but the heuristic gates are not met; accepted for this sample as a diagnostic tier). ' +
-      '<em>Ambiguous</em> means the catalogues disagree, several candidates compete, confidence is low, or a duplicate primary needs review: the figure shows the leading candidate dashed, and no fit is run. ' +
-      '<em>Not searched</em> means no catalogue covers the position.</li>' +
+      '<li><strong>Association.</strong> Candidates come from the Pan-STARRS1 stack catalogue (north of −30°) and the Legacy Surveys DR10 Tractor catalogue, merged within 1.5″. ' +
+      'Every candidate gets a probability: P is proportional to the galaxy’s model surface brightness at the SN position (its Tractor Sérsic profile, or an exponential for Pan-STARRS1-only sources), ' +
+      'times a star/galaxy prior and, when the SN and the galaxy both have a redshift, a redshift-consistency term. This is the “supernovae follow light” picture: a bright galaxy whose outskirts cover the SN can beat a faint one close by. ' +
+      'A hostless term stands for a host too faint to be catalogued. The probabilities are heuristics, not calibrated.</li>' +
+      '<li><strong>d_DLR.</strong> The SN separation divided by the galaxy’s directional light radius: its half-light radius along the direction to the SN, from the Tractor shape (elliptical). d_DLR = 1 means the SN sits on the half-light ellipse; the figures draw the d_DLR = 2 contour.</li>' +
+      '<li><strong>Confidence.</strong> <em>High</em>: the leading host has P ≥ 0.9; <em>medium</em>: 0.7–0.9; <em>low</em>: 0.5–0.7; <em>two candidates</em> (split): no candidate reaches 0.5. ' +
+      'Any other candidate with P ≥ 0.1 is shown as a second candidate, and gets its own SED fit when P ≥ 0.2. <em>Probably hostless</em>: the hostless term wins. <em>Not searched</em>: no catalogue covers the position. ' +
+      'The card also gives the tier of the earlier fail-closed ranking (v1), which left objects with competing candidates without a host.' +
+      (H.validation ? ' As a check, for ' + U.fint(H.validation.n) + ' objects here whose TNS report names a host galaxy with a position (searched objects, Magellanic Clouds excluded), the leading candidate is that galaxy in ' +
+        U.fx(100 * H.validation.lead, 0) + '% of cases, and one of the top two in ' + U.fx(100 * H.validation.top2, 0) + '%.' : '') + '</li>' +
       '<li><strong>SED fits.</strong> Bagpipes with a delayed-τ star-formation history, Calzetti dust with free A_V, nebular emission and free metallicity, at a fixed redshift, on Pan-STARRS1 grizy aperture photometry or Legacy grz plus unWISE W1/W2 fluxes. ' +
       'A fit that fails the numerical checks (sampler target, residuals, posteriors piled at a prior edge) is withheld. The card shows the median and 16–84% range.</li>' +
       '<li><strong>What is public.</strong> Only hosts of the SN Ia list, spectroscopically classified SNe Ia with a TNS redshift, are public: that selection uses public TNS data only. ' +

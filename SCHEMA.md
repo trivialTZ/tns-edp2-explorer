@@ -143,7 +143,7 @@ bytes, SHA-256 and column descriptions). check_public.py allows only these names
  "regions": ["WFD", DDF field names...],
  "spectra": {"n_objects", "n_spectra"},
  "debass": {"n", "statuses", "updated"},
- "hosts": {"n_rows", "n_images", "fits_withheld"},   // only when host products exist
+ "hosts": {"n_rows", "n_images", "fits_withheld", "validation"?},   // only when host products exist
  "lead": {"alert_start_mjd", "counts": {rubin, earlier, later, none, pre}, "median_earlier_days"},
  "stamps": {"alert": int, "dp2": int (private)},
  "cite": {"site", "repo", "doi" (null until a Zenodo DOI exists)},
@@ -198,26 +198,42 @@ diaObjectId, a different ID space from `alert_ids`. IDs are always strings:
 ### Host galaxies
 
 From the independent host pipeline (`common.HOSTS_DIR`, read by `build/hosts.py`);
-diagnostic only. Columns of the `hosts` table:
+diagnostic only. Since 2026-09-28 the association is the v2 candidate posterior
+(`host_candidates_v2.py` in the host run): every candidate galaxy gets a probability
+P proportional to its model surface brightness at the SN position (Tractor Sérsic
+profile, or a circular exponential for PS1-only sources; 20% of it in a 3 × r_e
+exponential for extended disks), times the star/galaxy prior and, when both exist, a
+redshift-consistency term, with a hostless term for an uncatalogued host
+(mu_0 = 29.5 mag/arcsec^2). P is a heuristic, not calibrated. Columns of the `hosts` table:
 
 | col | meaning |
 |---|---|
-| host_status | `associated`, `ambiguous`, `no-host` or `failed` (not searched) |
-| host_tier | the pipeline's association tier |
-| host_id, host_cat | selected host (`LS:<release>:<brick>:<objid>` in `LS_DR10`, or `PS1:<objID>` in `PS1_DR2`); null when ambiguous |
+| host_status | `associated` (leading P >= 0.5), `ambiguous` (two or more candidates, none at 0.5), `no-host` (hostless term wins) or `failed` (not searched) |
+| host_conf | `high` (P >= 0.9), `medium` (0.7-0.9), `low` (0.5-0.7), `split` (< 0.5), `none` (hostless favoured) |
+| host_p, host_pnone | P of the leading candidate; P(hostless) |
+| host_tier | the tier of the v1 fail-closed ranking (kept for reference) |
+| host_id, host_cat, host_xid | leading candidate (`LS:<release>:<brick>:<objid>` in `LS_DR10`, or `PS1:<objID>` in `PS1_DR2`) and its PS1 counterpart when merged |
 | host_ra, host_dec | host position (deg) |
-| host_sep, host_dlr, host_ddlr | separation (arcsec), circularised light scale (arcsec), separation / light scale |
+| host_sep, host_dlr, host_ddlr | separation (arcsec); directional light radius (arcsec): the half-light radius along the SN direction (elliptical for Tractor shapes); d_DLR = separation / DLR |
+| host_morph, host_mag, host_magband | Tractor type (`EXP`, `DEV`, `SER`, `REX`, `PSF`) or `PS1`; AB magnitude and its band (the one used for P) |
+| host_catz, host_catztype | the candidate's LS DR10 catalogue redshift (`spec` or `photo`) |
 | host_z, host_ztype, host_zsrc, host_zcat | fitted (fixed) redshift, `spec`/`photo`, its source, host catalogue spec-z |
 | host_nbands, host_bands, host_phot, host_arm | photometry used in the fit |
-| host_fit | fit status: `qc_pass`, `qc_fail` (values withheld), `pending`, `not_attempted_*`, ... |
+| host_fit | fit status: `qc_pass`, `qc_fail` (values withheld), `pending`, `not_attempted_*` (`_low_probability`: P < 0.2), ... |
 | host_{logm,logsfr,logssfr,age,av}_{p16,p50,p84} | Bagpipes posterior quantiles (qc_pass only) |
+| host_2_* | the second candidate when its P >= 0.1: `id, cat, ra, dec, sep, dlr, ddlr, p, morph, mag, catz, catztype`, its fit (`fit, z, ztype, zsrc, arm, bands`, fitted when P >= 0.2 and the leading host is not `high`) and posteriors `host_2_{logm,...}_{p16,p50,p84}` |
+| host_cands | up to 4 candidates, `[[id, cat, ra, dec, sep, ddlr, p, morph, r_e, q, pa], ...]` (`cat` = `legacy`/`ps1`, r_e in arcsec, q = b/a, pa in deg E of N) |
 | host_notes | pipeline notes, minus the boilerplate and the tier |
 | host_imgsrc | the imaging behind the figure (Legacy Surveys DR10, Pan-STARRS1 or DSS2) |
 | host_img | `"file"`: `data/hosts/<name>.webp`; `"shard"`: a data URI in the encrypted shard; null: none |
 
+`meta.hosts.validation` (when present): `{"n", "lead", "top2"}`, the fraction of the shown
+objects whose TNS report names a host galaxy with a position (a coordinate designation, or a
+name resolved with CDS Sesame) for which that galaxy is the leading candidate / in the top two.
+
 Public rows are only those with `in_snia_list` that this site shows as TNS-typed
 `SN Ia*`; `in_good_edp2_list` is never written. While any public row's fit is
-pending, public rows show `host_fit = "pending"` with the fit columns null (their
+pending (leading or second host), public rows show `host_fit`/`host_2_fit = "pending"` with the fit columns null (their
 real values are in the encrypted `hosts` table). `data/hosts/` holds only
 `<name>.webp` files for public rows with `host_img == "file"`.
 

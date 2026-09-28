@@ -528,6 +528,11 @@ table.host-post thead th { position: static; box-shadow: none; }
 .host-note { margin-top: 10px; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
 .host-note.muted { color: var(--muted); }
 .host-card .links { margin-top: 16px; }
+.host-sub { margin: 26px 0 10px; font-size: var(--t-md); font-weight: 600; }
+.host-cands { margin-top: 20px; }
+.host-cands summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--ink-2); }
+.host-cands table { margin-top: 10px; }
+.host-cands tr.muted td { color: var(--muted); }
 .rail-group { display: flex; align-items: center; gap: 8px; margin: 24px 0 0; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .rail-group .pill { text-transform: none; letter-spacing: 0; height: 20px; font-size: 11px; }
 

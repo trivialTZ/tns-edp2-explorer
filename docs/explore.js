@@ -31,6 +31,7 @@
     if (U.has('host_status')) {
       c.push({ id: 'host_status', label: 'Host', sub: 'diagnostic', on: true, title: 'Host association and SED fit status (diagnostic, not for science use)' },
         { id: 'host_z', label: 'Host z', num: true, on: false }, { id: 'host_logm_p50', label: 'Host log M*', num: true, on: false },
+        { id: 'host_p', label: 'Host P', num: true, on: false, title: 'Probability of the leading host candidate (heuristic)' },
         { id: 'host_sep', label: 'Host sep.', sub: 'arcsec', num: true, on: false }, { id: 'host_ddlr', label: 'Host d_DLR', num: true, on: false },
         { id: 'host_fit', label: 'Host fit', on: false }, { id: 'host_id', label: 'Host ID', mono: true, on: false });
     }
@@ -499,11 +500,13 @@
         v = V(i, 'host_status');
         if (v == null) return '<td><span class="none">—</span></td>';
         var hf = V(i, 'host_fit');
+        var hc = V(i, 'host_conf'), hp = V(i, 'host_p');
         return '<td><span class="' + (v === 'associated' ? '' : 'muted') + '">' + esc((X.HOST_STATUS || {})[v] || v) + '</span>' +
+          (v === 'associated' && hc && U.isNum(hp) ? ' <span class="muted">' + esc(hc) + ' · ' + U.fx(hp, 2) + '</span>' : '') +
           (hf ? '<span class="rng">' + esc((X.HOST_FIT || {})[hf] || hf) + '</span>' : '') + '</td>';
       case 'host_fit': v = V(i, 'host_fit'); return '<td>' + (v ? esc((X.HOST_FIT || {})[v] || v) : '<span class="none">—</span>') + '</td>';
       case 'host_z': v = V(i, 'host_z'); return '<td class="num">' + (U.isNum(v) ? U.fx(v, 4) : '<span class="none">—</span>') + '</td>';
-      case 'host_logm_p50': case 'host_sep': case 'host_ddlr':
+      case 'host_logm_p50': case 'host_sep': case 'host_ddlr': case 'host_p':
         v = V(i, c.id); return '<td class="num">' + (U.isNum(v) ? U.fx(v, 2) : '<span class="none">—</span>') + '</td>';
       case 'alert_ids':
         v = String(V(i, 'alert_ids') || '').split(',').filter(Boolean);

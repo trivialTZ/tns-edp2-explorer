@@ -172,6 +172,13 @@ class CheckPublic(unittest.TestCase):
         self.write_cat()
         self.assertFails()
 
+    def test_host_value_inside_candidate_list_is_scanned(self):
+        self.cat["hosts"]["cols"].append("host_cands")
+        self.cat["hosts"]["rows"][0].append([["LS:10000:1:2", "legacy", 1.0, 2.0, 0.5, 0.3, 0.9, "EXP", 1.0, 1.0, 0.0],
+                                             ["dp2 diaObject 1", "ps1", 1.0, 2.0, 3.0, 2.0, 0.1, "PS1", 1.0, 1.0, 0.0]])
+        self.write_cat()
+        self.assertFails()
+
     def test_host_figure_without_public_row_fails(self):
         (self.root / "data" / "hosts" / "2025abd.webp").write_bytes(WEBP)
         self.assertFails()

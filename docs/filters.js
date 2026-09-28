@@ -124,11 +124,12 @@
       get: function (i) { return String(rows[i][jg] == null ? '' : rows[i][jg]); } });
     // host galaxies (diagnostic): categorical facets over whatever host rows this view holds
     if (C.host_status !== undefined) {
-      var HS_LABEL = { associated: 'Associated', ambiguous: 'Ambiguous', 'no-host': 'No host found', failed: 'Not searched', __none__: 'Not in the host sample' };
+      var HS_LABEL = { associated: 'Associated', ambiguous: 'Two candidates', 'no-host': 'Probably hostless', failed: 'Not searched', __none__: 'Not in the host sample' };
+      var HC_LABEL = { high: 'High (P ≥ 0.9)', medium: 'Medium (0.7–0.9)', low: 'Low (0.5–0.7)', split: 'Split (P < 0.5)', none: 'Hostless favoured', __none__: 'Not in the host sample' };
       var HF_LABEL = { qc_pass: 'Fit passed QC', qc_fail: 'Withheld (QC fail)', pending: 'Fit pending', not_attempted_ambiguous: 'Not fitted: ambiguous host',
         not_attempted_no_host: 'Not fitted: no host', not_attempted_no_catalog_coverage: 'Not fitted: no catalogue coverage',
         not_attempted_implausible_tns_z: 'Not fitted: implausible TNS z', no_host_redshift: 'Not fitted: no redshift',
-        photometry_or_handoff_failed: 'Not fitted: photometry failed', __none__: 'Not in the host sample' };
+        photometry_or_handoff_failed: 'Not fitted: photometry failed', not_attempted_low_probability: 'Not fitted: P < 0.2', __none__: 'Not in the host sample' };
       var hostFacet = function (id, label, col, labels) {
         var j = C[col], cnt = new Map();
         var get = function (i) { var v = rows[i][j]; return v == null || v === '' ? '__none__' : String(v); };
@@ -138,6 +139,7 @@
           values: vals.map(function (v) { return { v: v, label: labels[v] || v.replace(/_/g, ' ') }; }) });
       };
       hostFacet('hst', 'Host status', 'host_status', HS_LABEL);
+      if (C.host_conf !== undefined) hostFacet('hconf', 'Host confidence', 'host_conf', HC_LABEL);
       if (C.host_fit !== undefined) hostFacet('hfit', 'Host fit status', 'host_fit', HF_LABEL);
     }
     if (S.isPrivate) {
@@ -177,6 +179,12 @@
       var ghz = colGetter('host_z'), hzq = quantiles(colValues(ghz), [0.98]);
       addNum({ id: 'hz', label: 'Host redshift', get: ghz, edges: linEdges(0, Math.max(0.05, hzq[0] || 0.2), 24), type: 'float', fmt: fmtNum(3), open: false,
         note: 'The redshift held fixed in the host fit (spectroscopic or photometric).' });
+    }
+    if (C.host_p !== undefined) {
+      addNum({ id: 'hp', label: 'Host probability', get: colGetter('host_p'), edges: linEdges(0, 1, 20), type: 'float', fmt: fmtNum(2), open: false,
+        note: 'P of the leading host candidate (heuristic, uncalibrated). Objects with a second candidate have P < 0.9.' });
+      addNum({ id: 'hddlr', label: 'Host d_DLR', get: colGetter('host_ddlr'), edges: linEdges(0, 6, 24), type: 'float', fmt: fmtNum(2), open: false,
+        note: 'SN offset from the leading host in units of its half-light radius toward the SN (directional light radius).' });
     }
     if (C.host_logm_p50 !== undefined) {
       addNum({ id: 'hlogm', label: 'Host log M*', get: colGetter('host_logm_p50'), edges: linEdges(6, 12, 24), type: 'float', fmt: fmtNum(2), open: false,

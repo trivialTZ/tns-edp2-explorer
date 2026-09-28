@@ -169,15 +169,22 @@
     return h;
   }
   // ------------------------------------------------------------------ host galaxy (diagnostic)
-  var HOST_STATUS = { associated: 'Associated', ambiguous: 'Ambiguous', 'no-host': 'No host found', failed: 'Not searched' };
+  // v2 (2026-09-28): every candidate has a probability (the "SNe follow light" posterior,
+  // uncalibrated); the leading host is named with a confidence label, and a second candidate
+  // with P >= 0.1 is shown too, with its own fit when P >= 0.2. See build/hosts.py, SCHEMA.md.
+  var HOST_STATUS = { associated: 'Associated', ambiguous: 'Two candidates', 'no-host': 'Probably hostless', failed: 'Not searched' };
+  var HOST_CONF = {
+    high: ['High confidence', 'P ≥ 0.9'], medium: ['Medium confidence', '0.7 ≤ P < 0.9'], low: ['Low confidence', '0.5 ≤ P < 0.7'],
+    split: ['Split', 'no candidate reaches P = 0.5'], none: ['Hostless favoured', 'no catalogued galaxy is bright enough at the SN position']
+  };
   var HOST_TIER = {
     secure_consensus_pilot: 'secure: Pan-STARRS1 and Legacy Surveys agree',
     secure_single_catalog_pilot: 'secure: one catalogue',
     probable_consensus_user_accepted_diagnostic: 'probable: both catalogues agree, heuristic gates not met',
-    ambiguous_catalog_disagreement: 'the catalogues disagree',
+    ambiguous_catalog_disagreement: 'ambiguous: the catalogues disagree',
     ambiguous_legacy_only: 'ambiguous in Legacy Surveys',
     ambiguous_ps1_only: 'ambiguous in Pan-STARRS1',
-    ambiguous_low_confidence: 'low confidence',
+    ambiguous_low_confidence: 'ambiguous: low confidence',
     duplicate_primary_sensitive_review_required: 'duplicate primary, needs review',
     hostless_or_no_catalog_candidate: 'no catalogue candidate',
     not_attempted: 'not attempted'
@@ -185,23 +192,80 @@
   var HOST_FIT = {
     qc_pass: 'Passed QC', qc_fail: 'Withheld (QC fail)', pending: 'Fit pending',
     not_attempted_ambiguous: 'Not fitted', not_attempted_no_host: 'Not fitted', not_attempted_no_catalog_coverage: 'Not fitted',
-    not_attempted_implausible_tns_z: 'Not fitted', no_host_redshift: 'Not fitted', photometry_or_handoff_failed: 'Not fitted'
+    not_attempted_implausible_tns_z: 'Not fitted', no_host_redshift: 'Not fitted', photometry_or_handoff_failed: 'Not fitted',
+    not_attempted_low_probability: 'Not fitted'
   };
   var HOST_FIT_WHY = {
     qc_fail: 'The sampler ran, but the residual or prior-boundary checks failed, so the values are withheld.',
-    not_attempted_ambiguous: 'No unique host, so no fit was run (candidate-mixture fits are future work).',
-    not_attempted_no_host: 'No host candidate was found.',
+    not_attempted_ambiguous: 'No unique host, so no fit was run.',
+    not_attempted_no_host: 'Hostless is the most probable outcome, so no fit was run.',
     not_attempted_no_catalog_coverage: 'No catalogue covers this position: south of Pan-STARRS1 (Dec < −30°) and outside Legacy Surveys DR10.',
     not_attempted_implausible_tns_z: 'The TNS redshift is implausible for this type, so the object was held out.',
     no_host_redshift: 'No redshift is available to hold fixed in the fit.',
-    photometry_or_handoff_failed: 'Host photometry failed, so there is nothing to fit.'
+    photometry_or_handoff_failed: 'Host photometry failed, so there is nothing to fit.',
+    not_attempted_low_probability: 'This candidate has P < 0.2, so it was not fitted.'
   };
   var HOST_POST = [['logm', 'log M*', 'M☉'], ['logsfr', 'log SFR', 'M☉ yr⁻¹, 100 Myr'], ['logssfr', 'log sSFR', 'yr⁻¹'],
     ['age', 'Mass-weighted age', 'Gyr'], ['av', 'A_V', 'mag, Calzetti']];
-  X.HOST_STATUS = HOST_STATUS; X.HOST_FIT = HOST_FIT;
+  var CAT_NAME = { LS_DR10: 'Legacy Surveys DR10', PS1_DR2: 'Pan-STARRS1 DR2', legacy: 'Legacy Surveys DR10', ps1: 'Pan-STARRS1 DR2' };
+  var MORPH = { EXP: 'exponential', DEV: 'de Vaucouleurs', SER: 'Sérsic', REX: 'round exponential', PSF: 'point-like', PS1: 'Pan-STARRS1 source' };
+  X.HOST_STATUS = HOST_STATUS; X.HOST_FIT = HOST_FIT; X.HOST_CONF = HOST_CONF;
+  function pct(p) { return U.isNum(p) ? (p >= 0.995 ? '> 99' : p < 0.005 ? '< 1' : String(Math.round(100 * p))) + '%' : '—'; }
+  // one host (pre = 'host_' for the leading host, 'host_2_' for the second candidate)
+  function hostFacts(i, pre, label) {
+    var h = '', id = V(i, pre + 'id');
+    if (!id) return '';
+    var sub = [CAT_NAME[V(i, pre + 'cat')] || V(i, pre + 'cat') || ''];
+    if (pre === 'host_' && V(i, 'host_xid')) sub.push('= ' + V(i, 'host_xid'));
+    h += fact(label, '<span class="mono">' + esc(id) + '</span>' + copyBtn(id, label + ' ID'), esc(sub.join(' ')));
+    h += fact('Probability', '<strong>' + pct(V(i, pre + 'p')) + '</strong>', pre === 'host_' && U.isNum(V(i, 'host_pnone')) ? 'hostless ' + pct(V(i, 'host_pnone')) : '');
+    if (U.isNum(V(i, pre + 'sep'))) {
+      h += fact('Offset', U.fx(V(i, pre + 'sep'), 2) + '″ · d_DLR ' + U.fx(V(i, pre + 'ddlr'), 2),
+        U.isNum(V(i, pre + 'dlr')) ? 'DLR ' + U.fx(V(i, pre + 'dlr'), 2) + '″ (half-light radius toward the SN)' : '');
+    }
+    var mo = V(i, pre + 'morph'), mg = V(i, pre + 'mag');
+    if (mo || U.isNum(mg)) {
+      h += fact('Galaxy', (U.isNum(mg) ? U.fx(mg, 1) + ' mag' : '—'), esc([MORPH[mo] || mo, pre === 'host_' && V(i, 'host_magband') ? V(i, 'host_magband') : ''].filter(Boolean).join(' · ')));
+    }
+    if (U.isNum(V(i, pre + 'catz'))) h += fact('Catalogue z', U.fx(V(i, pre + 'catz'), 3), esc(V(i, pre + 'catztype') === 'spec' ? 'Legacy Surveys DR10 spectroscopic' : 'Legacy Surveys DR10 photo-z'));
+    return h;
+  }
+  function fitBlock(i, pre, title) {
+    var fit = V(i, pre + 'fit');
+    if (!fit) return '';
+    var h = '<div class="host-fit"><h3>' + esc(title) + ' <span class="pill ' + (fit === 'qc_pass' ? '' : 'outline') + '">' + esc(HOST_FIT[fit] || fit) + '</span></h3>';
+    if (fit === 'qc_pass' && U.isNum(V(i, pre + 'logm_p50'))) {
+      var z = V(i, pre + 'z');
+      h += '<table class="data host-post"><thead><tr><th>Quantity</th><th class="num">Median</th><th class="num">16–84%</th></tr></thead><tbody>' +
+        HOST_POST.map(function (q) {
+          var m = V(i, pre + q[0] + '_p50'), a = V(i, pre + q[0] + '_p16'), b = V(i, pre + q[0] + '_p84');
+          return '<tr><td>' + esc(q[1]) + ' <span class="muted">' + esc(q[2]) + '</span></td><td class="num">' + U.fx(m, 2) + '</td><td class="num">' +
+            (U.isNum(a) && U.isNum(b) ? U.fx(a, 2) + ' – ' + U.fx(b, 2) : '—') + '</td></tr>';
+        }).join('') + '</tbody></table><p class="host-note">' + (U.isNum(z) ? 'Redshift held at ' + U.fx(z, 4) + (V(i, pre + 'ztype') ? ' (' + esc(V(i, pre + 'ztype')) + ')' : '') +
+          (V(i, pre + 'zsrc') ? ', ' + esc(V(i, pre + 'zsrc')) : '') + '. ' : '') +
+        (V(i, pre + 'bands') ? 'Bands ' + esc(String(V(i, pre + 'bands')).split(',').join(' ')) + '. ' : '') +
+        'Delayed-τ star formation, Calzetti dust. Ages, SFRs and sSFRs depend on the model.</p>';
+    } else if (fit === 'pending') {
+      h += '<p class="host-note">Fit pending.' + ((S.meta.hosts || {}).fits_withheld && !S.isPrivate ? ' Fit results appear here once the host run has finished for every public object.' : '') + '</p>';
+    } else if (HOST_FIT_WHY[fit]) h += '<p class="host-note">' + esc(HOST_FIT_WHY[fit]) + '</p>';
+    return h + '</div>';
+  }
+  function candTable(i) {
+    var c = V(i, 'host_cands');
+    if (!Array.isArray(c) || !c.length) return '';
+    var rows = c.map(function (r, k) {
+      return '<tr><td class="num">' + (k + 1) + '</td><td class="mono">' + esc(r[0]) + '</td><td class="num">' + U.fx(r[4], 1) + '″</td><td class="num">' +
+        U.fx(r[5], 2) + '</td><td class="num">' + pct(r[6]) + '</td></tr>';
+    }).join('');
+    if (U.isNum(V(i, 'host_pnone'))) rows += '<tr class="muted"><td></td><td>hostless (uncatalogued host)</td><td></td><td></td><td class="num">' + pct(V(i, 'host_pnone')) + '</td></tr>';
+    return '<details class="host-cands"><summary>All candidates</summary><table class="data host-post"><thead><tr><th class="num">#</th><th>ID</th>' +
+      '<th class="num">Offset</th><th class="num">d_DLR</th><th class="num">P</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<p class="host-note muted">P ∝ the galaxy’s model surface brightness at the SN position (Tractor or Pan-STARRS1 profile), × a star/galaxy prior and, when both exist, ' +
+      'a redshift-consistency term; “hostless” stands for a galaxy too faint to be catalogued. Heuristic, not calibrated.</p></details>';
+  }
   function hostCardHtml(i) {
     if (!U.has('host_status') || V(i, 'host_status') == null) return '';
-    var st = V(i, 'host_status'), fit = V(i, 'host_fit'), name = V(i, 'name'), img = V(i, 'host_img');
+    var st = V(i, 'host_status'), name = V(i, 'name'), img = V(i, 'host_img'), conf = V(i, 'host_conf');
     var hra = V(i, 'host_ra'), hdec = V(i, 'host_dec'), team = S.hostTeam.has(String(name));
     var h = '<section class="card host-card" aria-labelledby="host-h"><div class="host-head"><h2 id="host-h">Host galaxy</h2>' +
       '<span class="pill diag">Diagnostic — not for science use</span>' +
@@ -211,41 +275,30 @@
     else if (img === 'shard') fig = S.hostImg[name] ? '<img src="' + S.hostImg[name] + '" width="400" height="400" alt="Host-selection image around ' + esc(U.fullName(i)) + '">' :
       '<div class="host-noimg sk" id="host-img-slot" data-name="' + esc(name) + '"></div>';
     else fig = '<div class="host-noimg">No host-selection image</div>';
-    h += '<div class="host-body"><figure class="host-fig">' + fig + '<figcaption>Magenta crosshair: the transient. White ellipses: Legacy Surveys candidates (2.5 × half-light radius); ' +
-      'white circles: Pan-STARRS1-only candidates. Amber: the selected host, dashed when ambiguous. North up, east left; the bar at lower left gives the scale. Background: ' +
+    h += '<div class="host-body"><figure class="host-fig">' + fig + '<figcaption>Magenta crosshair: the transient. Ellipses: candidate galaxies at twice their half-light radius ' +
+      '(the d_DLR = 2 contour), numbered by rank. Amber: the leading host, with its probability (dashed when the confidence is low or split); cyan dashed: the second candidate. ' +
+      'North up, east left; the bar at lower left gives the scale. Background: ' +
       esc(V(i, 'host_imgsrc') || 'Legacy Surveys DR10, or Pan-STARRS1 / DSS2 where DR10 has no pixels') + '.</figcaption></figure><div class="host-info"><dl class="facts host-facts">';
-    var tier = V(i, 'host_tier');
-    h += fact('Association', '<span class="pill' + (st === 'associated' ? '' : ' outline') + '">' + esc(HOST_STATUS[st] || st) + '</span>', tier ? esc(HOST_TIER[tier] || tier.replace(/_/g, ' ')) : '');
-    if (V(i, 'host_id')) {
-      var catName = { LS_DR10: 'Legacy Surveys DR10', PS1_DR2: 'Pan-STARRS1 DR2' }[V(i, 'host_cat')] || V(i, 'host_cat') || '';
-      h += fact(st === 'ambiguous' ? 'Leading candidate' : 'Host', '<span class="mono">' + esc(V(i, 'host_id')) + '</span>' + copyBtn(V(i, 'host_id'), 'host ID'), esc(catName));
+    var tier = V(i, 'host_tier'), cf = HOST_CONF[conf];
+    h += fact('Association', '<span class="pill' + (st === 'associated' ? '' : ' outline') + '">' + esc(HOST_STATUS[st] || st) + '</span>' +
+      (cf && st !== 'failed' ? ' <span class="muted">' + esc(cf[0]) + '</span>' : ''),
+      (cf && st !== 'failed' ? esc(cf[1]) + ' · ' : '') + (tier ? 'v1 tier: ' + esc(HOST_TIER[tier] || tier.replace(/_/g, ' ')) : ''));
+    h += hostFacts(i, 'host_', st === 'ambiguous' ? 'Leading candidate' : 'Host');
+    h += '</dl>';
+    h += fitBlock(i, 'host_', 'Bagpipes SED fit');
+    if (V(i, 'host_2_id')) {
+      h += '<h3 class="host-sub">Second candidate</h3><dl class="facts host-facts">' + hostFacts(i, 'host_2_', 'Candidate 2') + '</dl>';
+      h += fitBlock(i, 'host_2_', 'SED fit, candidate 2');
     }
-    if (U.isNum(V(i, 'host_sep'))) {
-      h += fact('Separation', U.fx(V(i, 'host_sep'), 2) + '″', U.isNum(V(i, 'host_ddlr')) ? 'd_DLR ' + U.fx(V(i, 'host_ddlr'), 2) +
-        (U.isNum(V(i, 'host_dlr')) ? ' · DLR ' + U.fx(V(i, 'host_dlr'), 1) + '″, circularised' : '') : '');
-    }
-    if (U.isNum(V(i, 'host_z'))) {
-      h += fact('Redshift', U.fx(V(i, 'host_z'), 4) + (V(i, 'host_ztype') ? ' <span class="muted">' + esc(V(i, 'host_ztype')) + '</span>' : ''),
-        esc(V(i, 'host_zsrc') || '') + (U.isNum(V(i, 'host_zcat')) ? ' · catalogue spec-z ' + U.fx(V(i, 'host_zcat'), 4) : ''));
-    }
-    if (V(i, 'host_bands')) h += fact('Photometry', esc(String(V(i, 'host_bands')).split(',').join(' ')), esc(V(i, 'host_phot') || ''));
-    h += '</dl><div class="host-fit"><h3>Bagpipes SED fit <span class="pill ' + (fit === 'qc_pass' ? '' : 'outline') + '">' + esc(HOST_FIT[fit] || fit || '—') + '</span></h3>';
-    if (fit === 'qc_pass' && U.isNum(V(i, 'host_logm_p50'))) {
-      h += '<table class="data host-post"><thead><tr><th>Quantity</th><th class="num">Median</th><th class="num">16–84%</th></tr></thead><tbody>' +
-        HOST_POST.map(function (q) {
-          var m = V(i, 'host_' + q[0] + '_p50'), a = V(i, 'host_' + q[0] + '_p16'), b = V(i, 'host_' + q[0] + '_p84');
-          return '<tr><td>' + esc(q[1]) + ' <span class="muted">' + esc(q[2]) + '</span></td><td class="num">' + U.fx(m, 2) + '</td><td class="num">' +
-            (U.isNum(a) && U.isNum(b) ? U.fx(a, 2) + ' – ' + U.fx(b, 2) : '—') + '</td></tr>';
-        }).join('') + '</tbody></table><p class="host-note">Delayed-τ star formation, Calzetti dust, redshift held fixed. Ages, SFRs and sSFRs depend on the model.</p>';
-    } else if (fit === 'pending') {
-      h += '<p class="host-note">Fit pending.' + ((S.meta.hosts || {}).fits_withheld && !S.isPrivate ? ' Fit results appear here once the host run has finished for every public object.' : '') + '</p>';
-    } else if (HOST_FIT_WHY[fit]) h += '<p class="host-note">' + esc(HOST_FIT_WHY[fit]) + '</p>';
-    h += '</div>';
+    h += candTable(i);
     if (V(i, 'host_notes')) h += '<p class="host-note muted">Pipeline notes: ' + esc(V(i, 'host_notes')) + '</p>';
-    if (U.isNum(hra) && U.isNum(hdec)) {
-      h += '<div class="links">' + extLink('https://www.legacysurvey.org/viewer?ra=' + hra.toFixed(6) + '&dec=' + hdec.toFixed(6) + '&layer=ls-dr10&zoom=16&mark=' +
-        hra.toFixed(6) + ',' + hdec.toFixed(6), 'Legacy Survey viewer at the host') + '</div>';
-    }
+    var L = [];
+    if (U.isNum(hra) && U.isNum(hdec)) L.push(extLink('https://www.legacysurvey.org/viewer?ra=' + hra.toFixed(6) + '&dec=' + hdec.toFixed(6) + '&layer=ls-dr10&zoom=16&mark=' +
+        hra.toFixed(6) + ',' + hdec.toFixed(6), 'Legacy Survey viewer at the host'));
+    var r2 = V(i, 'host_2_ra'), d2 = V(i, 'host_2_dec');
+    if (U.isNum(r2) && U.isNum(d2)) L.push(extLink('https://www.legacysurvey.org/viewer?ra=' + r2.toFixed(6) + '&dec=' + d2.toFixed(6) + '&layer=ls-dr10&zoom=16&mark=' +
+        r2.toFixed(6) + ',' + d2.toFixed(6), 'at candidate 2'));
+    if (L.length) h += '<div class="links">' + L.join('') + '</div>';
     return h + '</div></div></section>';
   }
   function fillHostImg(i) {
