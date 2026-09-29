@@ -461,6 +461,7 @@ td .rng { display: block; font-size: 11px; color: var(--muted); margin-top: 1px;
 td .typ { color: var(--ink-2); }
 td .none { color: var(--faint); }
 .empty { padding: 64px 24px; text-align: center; color: var(--muted); }
+td > .empty { position: sticky; left: 0; box-sizing: border-box; width: min(720px, 100%); max-width: 90vw; }   /* stays in view in a wide, scrolling table */
 .empty h3 { font: 600 var(--t-lg) var(--display); color: var(--ink); margin-bottom: 6px; }
 .pager { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .pager .pg { display: flex; gap: 6px; align-items: center; }

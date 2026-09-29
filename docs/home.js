@@ -72,7 +72,7 @@
   function saltSection() {
     var m = S.meta.salt;
     if (!m || !m.nested) return '';
-    var link = function (t) { return '#/explore?' + K.SALT_TIERS.slice(0, K.SALT_TIERS.indexOf(t) + 1).map(function (x) { return 'salt=' + x; }).join('&'); };
+    var link = function (t) { return '#/explore?salt=' + t; };   // tiers are nested in the filter: salt=good is strict + good
     var card = function (t, sub) {
       return '<a class="card src-card" href="' + link(t) + '"><div class="top"><b>' + esc(K.SALT_LABEL[t]) + '</b><span class="pill private">team only</span></div>' +
         '<div class="stat" style="padding:0"><div class="v">' + U.fint(m.nested[t]) + '</div></div><p class="muted" style="margin:0">' + esc(sub) + '</p></a>';
@@ -265,7 +265,14 @@
         p: ek.map(function (k) { return ['src', k]; }).concat([['srcmode', 'any']]) });
     } else if (offer) d.push({ id: 'edp2', label: 'EDP2 photometry', locked: true });
     if (team && U.has('edp2_salt')) d.push({ id: 'salt', label: 'DP2 SALT candidates', priv: true, test: function (i) { return !!X.saltTier(i); },
-      p: K.SALT_TIERS.map(function (t) { return ['salt', t]; }) });
+      p: [['salt', 'broad']] });
+    if (team && U.has('edp2_salt')) {
+      // SALT tiers are nested (choosing good gives strict + good); TNS / not-TNS splits the candidates by whether the site's TNS list has them
+      d.push({ id: 'saltS', label: 'SALT strict', priv: true, test: function (i) { return X.saltTier(i) === 'strict'; }, p: [['salt', 'strict']] },
+        { id: 'saltG', label: 'SALT good or better', priv: true, test: function (i) { var t = X.saltTier(i); return t === 'strict' || t === 'good'; }, p: [['salt', 'good']] },
+        { id: 'tns', label: 'In the TNS list', priv: true, test: function (i) { return !X.isDp2Only(i); }, p: [['pre', 'SN'], ['pre', 'AT']] },
+        { id: 'notns', label: 'Not in TNS (DP2 only)', priv: true, test: X.isDp2Only, p: [['pre', 'DP2']] });
+    }
     if (U.has('debass')) d.push({ id: 'debass', label: 'DEBASS target', test: function (i) { return !!U.V(i, 'debass'); }, p: [['debass', 'FINISHED'], ['debass', 'YES']] });
     d.push({ id: 'ia', label: 'SN Ia', test: function (i) { return U.classGroup(U.V(i, 'type')) === 'Ia'; }, p: [['cg', 'Ia']] });
     d.push({ id: 'lc', label: 'Lightcurve data', test: hasData, p: S.srcKeys.map(function (k) { return ['src', k]; }).concat([['srcmode', 'any']]) });

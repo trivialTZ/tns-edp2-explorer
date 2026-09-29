@@ -6,7 +6,7 @@
   var E = { page: 0, pageSize: 100, built: false, ptsTab: null, open: {}, facetMore: {}, find: {} };
   var PAGE_SIZES = [50, 100, 250, 500];
   var HW = 280, HH = 44;   // facet histogram viewBox
-  var COLS_KEY = 'tnsx-cols-v4';   // v4: DP2 SALT columns (team access); older saved choices would hide new columns
+  var COLS_KEY = 'tnsx-cols-v5';   // v5: SALT tier / z moved next to Type; older saved choices would hide or misplace them
 
   // ------------------------------------------------------------------ columns
   function columnDefs() {
@@ -18,6 +18,10 @@
     c.push({ id: 'type', label: 'Type', on: true }, { id: 'z', label: 'Redshift', num: true, on: true },
       { id: 'disc_mjd', label: 'Discovered', sub: 'UTC', on: true }, { id: 'disc_mag', label: 'Disc. mag', sub: 'filter', num: true, on: true },
       { id: 'group', label: 'Group', on: true });
+    // DP2 SALT-candidate columns sit next to Type / Redshift: for DP2-only rows those two are empty
+    if (S.isPrivate && U.has('edp2_salt')) c.splice(c.findIndex(function (x) { return x.id === 'type'; }), 0,
+      { id: 'edp2_salt', label: 'SALT tier', sub: 'DP2 search', on: true, priv: true, title: 'Whole-DP2 SN search: SALT3 fit-quality tier (strict ⊂ good ⊂ broad); not a classification' },
+      { id: 'edp2_salt_z', label: 'SALT z', num: true, on: true, priv: true, title: 'Photometric redshift from the SALT3 fit (also used for Redshift and its sort when a candidate has no TNS redshift)' });
     if (U.has('region')) c.push({ id: 'region', label: 'Region', sub: 'WFD / DDF', on: true, title: 'DDF: covered by visits aimed at an LSST Deep Drilling Field; WFD: everything else' });
     if (U.has('debass')) c.push({ id: 'debass', label: 'DEBASS', on: true, title: 'DEBASS follow-up status (sheet “Following?” = FINISHED or YES)' });
     if (U.has('n_spec')) c.push({ id: 'n_spec', label: 'Spectra', num: true, on: true });
@@ -41,9 +45,7 @@
       if (U.has('edp2_lead')) c.push({ id: 'edp2_lead', label: 'EDP2 lead', sub: 'days', num: true, on: true, priv: true });
       if (U.has('edp2_tc')) c.push({ id: 'edp2_tc', label: 'EDP2 time-consistent', on: false, priv: true });
       if (U.has('edp2_coadd_bands')) c.push({ id: 'edp2_coadd_bands', label: 'EDP2 coadd', sub: 'bands', on: true, priv: true, title: 'Bands with a DP2 deep coadd at this position' });
-      if (U.has('edp2_salt')) c.push({ id: 'edp2_salt', label: 'SALT tier', sub: 'DP2 search', on: true, priv: true, title: 'Whole-DP2 SN search: SALT3 fit-quality tier (strict ⊂ good ⊂ broad); not a classification' },
-        { id: 'edp2_salt_z', label: 'SALT z', num: true, on: true, priv: true, title: 'Photometric redshift from the SALT3 fit' },
-        { id: 'edp2_salt_x1', label: 'SALT x1', num: true, on: false, priv: true }, { id: 'edp2_salt_c', label: 'SALT c', num: true, on: false, priv: true });
+      if (U.has('edp2_salt')) c.push({ id: 'edp2_salt_x1', label: 'SALT x1', num: true, on: false, priv: true }, { id: 'edp2_salt_c', label: 'SALT c', num: true, on: false, priv: true });
     }
     c.push({ id: 'ra', label: 'RA', sub: 'deg', num: true, on: false, mono: true }, { id: 'dec', label: 'Dec', sub: 'deg', num: true, on: false, mono: true },
       { id: 'internal', label: 'Internal names', on: false });
@@ -159,6 +161,9 @@
     if (U.has('host_z')) o.push(['host_z', 'Host redshift']);
     if (U.has('host_logm_p50')) o.push(['host_logm_p50', 'Host log M*']);
     if (S.isPrivate) {
+      if (U.has('edp2_salt_z')) o.push(['edp2_salt_z', 'SALT redshift']);
+      if (U.has('edp2_salt_x1')) o.push(['edp2_salt_x1', 'SALT stretch x1']);
+      if (U.has('edp2_salt_c')) o.push(['edp2_salt_c', 'SALT colour c']);
       if (U.has('edp2_sep')) o.push(['edp2_sep', 'EDP2 separation']);
       if (U.has('edp2_ndia')) o.push(['edp2_ndia', 'EDP2 nDiaSources']);
       if (U.has('edp2_lead')) o.push(['edp2_lead', 'EDP2 lead time']);
@@ -479,7 +484,11 @@
         return '<td class="fix name"><span class="pfx">' + esc(V(i, 'prefix') || '') + '</span><a href="#/object/' + encodeURIComponent(V(i, 'name')) + '">' + esc(V(i, 'name')) + '</a></td>';
       case '_sep': return '<td class="num">' + (F.last.sep ? U.fx(F.last.sep[i], 2) : '') + '</td>';
       case 'type': v = V(i, 'type'); return '<td>' + (v ? '<span class="typ">' + esc(v) + '</span>' : '<span class="none">—</span>') + '</td>';
-      case 'z': v = V(i, 'z'); return '<td class="num">' + (U.isNum(v) ? U.fx(v, v < 0.1 ? 4 : 3) : '<span class="none">—</span>') + '</td>';
+      case 'z': v = V(i, 'z');
+        if (!U.isNum(v) && S.isPrivate && U.isNum(V(i, 'edp2_salt_z'))) {          // DP2 candidate without a TNS redshift: the SALT3 photo-z
+          return '<td class="num" title="SALT3 photometric redshift (no TNS redshift)"><span class="muted">≈</span>' + U.fx(V(i, 'edp2_salt_z'), 3) + '</td>';
+        }
+        return '<td class="num">' + (U.isNum(v) ? U.fx(v, v < 0.1 ? 4 : 3) : '<span class="none">—</span>') + '</td>';
       case 'disc_mjd': v = V(i, 'disc_mjd'); return '<td class="num" title="MJD ' + U.fx(v, 3) + '">' + U.isoDate(v) + '</td>';
       case 'disc_mag': v = V(i, 'disc_mag');
         return '<td class="num">' + U.fx(v, 2) + (V(i, 'disc_filter') ? ' <span class="muted">' + esc(V(i, 'disc_filter')) + '</span>' : '') + '</td>';
@@ -554,8 +563,11 @@
     }
     var t = $('#rtable');
     t.tHead.innerHTML = thead;
-    t.tBodies[0].innerHTML = n ? body.join('') : '<tr><td colspan="' + cols.length + '"><div class="empty"><h3>No transients match</h3><p>Remove a filter above, or <button type="button" class="linkbtn" id="empty-clear">clear all filters</button>.</p></div></td></tr>';
+    t.tBodies[0].innerHTML = n ? body.join('') : '<tr><td colspan="' + cols.length + '"><div class="empty"><h3>No transients match</h3><p>Remove a filter above, or <button type="button" class="linkbtn" id="empty-clear">clear all filters</button>.</p>' +
+      (F.state.srcAll && (F.state.sel.src || []).length > 1 ? '<p>“Has data from” is set to <b>all selected</b>: a transient must have data from every one of the ' + F.state.sel.src.length +
+        ' sources at once. <button type="button" class="linkbtn" id="empty-any">Match any of them instead</button>.</p>' : '') + '</div></td></tr>';
     var ec = $('#empty-clear'); if (ec) ec.addEventListener('click', clearAll);
+    var ea = $('#empty-any'); if (ea) ea.addEventListener('click', function () { F.state.srcAll = false; update(true); });
     var pg = '<span>' + (n ? 'Showing ' + U.fint(a + 1) + '–' + U.fint(b) + ' of ' + U.fint(n) : 'No results') + '</span><span class="pg">' +
       '<label class="sr-only" for="page-size">Rows per page</label><select class="select" id="page-size">' +
       PAGE_SIZES.map(function (s) { return '<option value="' + s + '"' + (s === ps ? ' selected' : '') + '>' + s + ' per page</option>'; }).join('') + '</select>';

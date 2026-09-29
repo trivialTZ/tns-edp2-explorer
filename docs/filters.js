@@ -157,9 +157,12 @@
       // DP2 SALT-pass candidates (team only; build/dp2_salt.py): the tightest tier each row reaches
       if (C.edp2_salt !== undefined) {
         var jsl = C.edp2_salt;
+        var TR = { strict: 0, good: 1, broad: 2 };
         addCat({ id: 'salt', label: 'DP2 SALT tier', private: true, open: true, get: function (i) { return rows[i][jsl] || '__none__'; },
-          values: [{ v: 'strict', label: 'Strict' }, { v: 'good', label: 'Good, not strict' }, { v: 'broad', label: 'Broad only' }, { v: '__none__', label: 'Not a SALT candidate' }],
-          note: 'Whole-DP2 supernova search: SALT3 fit-quality tiers, nested (strict ⊂ good ⊂ broad), so the good tier is Strict + Good. Not spectroscopic classifications.' });
+          // nested: a row belongs to its own tier and every looser one, so choosing "Good" gives strict + good
+          member: function (i) { var t = rows[i][jsl]; return t ? K.SALT_TIERS.slice(TR[t]) : ['__none__']; },
+          values: [{ v: 'strict', label: 'Strict' }, { v: 'good', label: 'Good (includes Strict)' }, { v: 'broad', label: 'Broad (all candidates)' }, { v: '__none__', label: 'Not a SALT candidate' }],
+          note: 'Whole-DP2 supernova search: SALT3 fit-quality tiers, nested (strict ⊂ good ⊂ broad). Choosing a tier includes every tighter one; tick several to combine. Not spectroscopic classifications.' });
         addCat({ id: 'smp', label: 'Catalogue', private: true, open: true, get: function (i) { return X.isDp2Only(i) ? 'dp2' : 'tns'; },
           values: [{ v: 'tns', label: 'TNS objects' }, { v: 'dp2', label: 'DP2 candidates, not in TNS here' }] });
       }
@@ -422,7 +425,8 @@
           for (var a = 0; a < have.length; a++) if (set.has(have[a])) hit++;
           return all ? hit === set.size : hit > 0;
         } });
-      } else preds.push({ id: d.id, test: function (i) { return set.has(d.get(i)); } });
+      } else if (d.member) preds.push({ id: d.id, test: function (i) { var m = d.member(i); for (var a = 0; a < m.length; a++) if (set.has(m[a])) return true; return false; } });
+      else preds.push({ id: d.id, test: function (i) { return set.has(d.get(i)); } });
     });
     F.num.forEach(function (d) {
       var r = st.rng[d.id];
@@ -458,8 +462,8 @@
         var d = F.cat[a];
         if (nfi && w !== catOwn[a]) continue;
         if (d === srcD && srcAnd && nfi) continue;             // AND: adding a source never rescues a row
-        var c = counts[d.id], v = d.get(i);
-        if (d.multi) { for (var b = 0; b < v.length; b++) c[v[b]] = (c[v[b]] || 0) + 1; }
+        var c = counts[d.id], v = d.member ? d.member(i) : d.get(i);
+        if (d.multi || d.member) { for (var b = 0; b < v.length; b++) c[v[b]] = (c[v[b]] || 0) + 1; }
         else c[v] = (c[v] || 0) + 1;
       }
       for (a = 0; a < F.num.length; a++) {
@@ -495,7 +499,10 @@
     if (key === '_sep') get = function (i) { return sep ? sep[i] : null; };
     else if (key === 'name') get = function (i) { return S.nameKey[i]; };
     else if (key === '_npts') get = F.nTot;
-    else { var j = S.C[key]; get = function (i) { return S.rows[i][j]; }; }
+    else if (key === 'z' && S.isPrivate && S.C.edp2_salt_z !== undefined) {   // DP2 candidates without a TNS redshift sort by their SALT z
+      var jz = S.C.z, js2 = S.C.edp2_salt_z;
+      get = function (i) { var v = S.rows[i][jz]; return v == null || v === '' || (typeof v === 'number' && isNaN(v)) ? S.rows[i][js2] : v; };
+    } else { var j = S.C[key]; get = function (i) { return S.rows[i][j]; }; }
     var jd = S.C.disc_mjd;
     var arr = idx.map(function (i) { return [get(i), i]; });
     function tie(i1, i2) { return (S.rows[i2][jd] || 0) - (S.rows[i1][jd] || 0) || i1 - i2; }
