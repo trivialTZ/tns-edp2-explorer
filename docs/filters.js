@@ -162,7 +162,7 @@
           // nested: a row belongs to its own tier and every looser one, so choosing "Good" gives strict + good
           member: function (i) { var t = rows[i][jsl]; return t ? K.SALT_TIERS.slice(TR[t]) : ['__none__']; },
           values: [{ v: 'strict', label: 'Strict' }, { v: 'good', label: 'Good (includes Strict)' }, { v: 'broad', label: 'Broad (all candidates)' }, { v: '__none__', label: 'Not a SALT candidate' }],
-          note: 'Whole-DP2 supernova search: SALT3 fit-quality tiers, nested (strict ⊂ good ⊂ broad). Choosing a tier includes every tighter one; tick several to combine. Not spectroscopic classifications.' });
+          note: 'Whole-DP2 supernova search: SALT3 fit-quality tiers, nested (strict is inside good, which is inside broad). Choosing a tier includes every tighter one; tick several to combine. Not spectroscopic classifications.' });
         addCat({ id: 'smp', label: 'Catalogue', private: true, open: true, get: function (i) { return X.isDp2Only(i) ? 'dp2' : 'tns'; },
           values: [{ v: 'tns', label: 'TNS objects' }, { v: 'dp2', label: 'DP2 candidates, not in TNS here' }] });
       }

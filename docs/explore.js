@@ -20,7 +20,7 @@
       { id: 'group', label: 'Group', on: true });
     // DP2 SALT-candidate columns sit next to Type / Redshift: for DP2-only rows those two are empty
     if (S.isPrivate && U.has('edp2_salt')) c.splice(c.findIndex(function (x) { return x.id === 'type'; }), 0,
-      { id: 'edp2_salt', label: 'SALT tier', sub: 'DP2 search', on: true, priv: true, title: 'Whole-DP2 SN search: SALT3 fit-quality tier (strict ⊂ good ⊂ broad); not a classification' },
+      { id: 'edp2_salt', label: 'SALT tier', sub: 'DP2 search', on: true, priv: true, title: 'Whole-DP2 SN search: SALT3 fit-quality tier (strict is inside good, which is inside broad); not a classification' },
       { id: 'edp2_salt_z', label: 'SALT z', num: true, on: true, priv: true, title: 'Photometric redshift from the SALT3 fit (also used for Redshift and its sort when a candidate has no TNS redshift)' });
     if (U.has('region')) c.push({ id: 'region', label: 'Region', sub: 'WFD / DDF', on: true, title: 'DDF: covered by visits aimed at an LSST Deep Drilling Field; WFD: everything else' });
     if (U.has('debass')) c.push({ id: 'debass', label: 'DEBASS', on: true, title: 'DEBASS follow-up status (sheet “Following?” = FINISHED or YES)' });
@@ -107,6 +107,9 @@
     h += facetShell('type', cat.type.label, catBody(cat.type), true);
     h += facetShell('cg', cat.cg.label, catBody(cat.cg), false);
     h += facetShell('pre', cat.pre.label, catBody(cat.pre), true);
+    // DP2 SALT candidates (team access): tier and TNS / not-TNS sit right under the name prefix
+    if (cat.salt) h += facetShell('salt', cat.salt.label, catBody(cat.salt), true, 'private');
+    if (cat.smp) h += facetShell('smp', cat.smp.label, catBody(cat.smp), true, 'private');
     h += facetShell('src', cat.src.label, catBody(cat.src), true);
     ['reg', 'debass', 'rid'].forEach(function (id) { if (cat[id]) h += facetShell(id, cat[id].label, catBody(cat[id]), cat[id].open); });
     if (cat.clf) h += facetShell('clf', cat.clf.label, catBody(cat.clf) + (num.mpsn ? '<div style="height:14px"></div>' + numWidget(num.mpsn, true) + '<div style="height:14px"></div>' + numWidget(num.mpia, true) : ''), false);
@@ -144,7 +147,7 @@
       if (cat.ecov) h += facetShell('ecov', cat.ecov.label, catBody(cat.ecov), true, 'private');
       h += facetShell('em', cat.em.label, catBody(cat.em), true, 'private');
       h += facetShell('etc', cat.etc.label, catBody(cat.etc), false, 'private');
-      ['esep', 'endia', 'elead'].forEach(function (id) { if (num[id]) h += facetShell(id, num[id].label, numWidget(num[id]), false, 'private'); });
+      ['esep', 'endia', 'elead', 'sz', 'sx1', 'sc'].forEach(function (id) { if (num[id]) h += facetShell(id, num[id].label, numWidget(num[id]), false, 'private'); });
     }
     return h;
   }

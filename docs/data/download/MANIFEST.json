@@ -2,7 +2,7 @@
  "title": "TNS x EDP2 Explorer: bulk download",
  "site": "https://trivialtz.github.io/tns-edp2-explorer/",
  "version": "2026-09-29",
- "built": "2026-09-29T05:28:51+00:00",
+ "built": "2026-09-29T05:35:53+00:00",
  "mode": "public",
  "sources": {
   "lsst_alert": "LSST alerts (Fink)",

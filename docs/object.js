@@ -183,7 +183,7 @@
     var t = X.saltTier(i);
     if (!t) return '';
     var q = K.SALT_TIERS.slice(0, K.SALT_TIERS.indexOf(t) + 1).map(function (x) { return 'salt=' + x; }).join('&amp;');   // nested tiers
-    return '<a class="pill private" href="#/explore?' + q + '" title="DP2 SALT fit-quality tier (strict ⊂ good ⊂ broad). Show every candidate in this tier">SALT ' + esc(K.SALT_LABEL[t] || t) + '</a>';
+    return '<a class="pill private" href="#/explore?' + q + '" title="DP2 SALT fit-quality tier (strict is inside good, which is inside broad). Show every candidate in this tier">SALT ' + esc(K.SALT_LABEL[t] || t) + '</a>';
   }
   function dp2HeroHtml(i) {
     var id = String(V(i, 'name')), ra = V(i, 'ra'), dec = V(i, 'dec'), disc = V(i, 'disc_mjd'), rg = V(i, 'region');
