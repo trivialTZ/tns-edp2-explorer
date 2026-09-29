@@ -19,6 +19,7 @@
     TICK_RADIUS_DEG: 1.75,    // pointing ticks: visit centre within this radius
     DEFAULT_MATCH_R: 2.0,     // arcsec, common.MATCH_RADIUS_AS
     SHARD_SIZE: 100,
+    XSHARD_BASE: 10000,       // shard >= this: a team-only row (DP2 SALT candidate), data/edp2/xNNN.js only (build/dp2_salt.py)
     MJD_UNIX: 40587,          // MJD of 1970-01-01
     DEFAULT_CONE_AS: 10,
     PRIVATE_BANNER: 'PROPRIETARY Rubin DP2 data. For Rubin data-rights holders only. Do not redistribute.',
@@ -35,11 +36,11 @@
         I: '#d9b550', Clear: '#dde2e5', other: '#666d72' }
     },
     // Marker per source: filled = detections, open = forced photometry of the same survey.
-    SRC_SYMBOL: { edp2_dia: 'circle', edp2_fp: 'circle-open', lsst_alert: 'diamond', lsst_alert_fp: 'diamond-open',
+    SRC_SYMBOL: { edp2_dia: 'circle', edp2_fp: 'circle-open', edp2_night: 'circle-open', lsst_alert: 'diamond', lsst_alert_fp: 'diamond-open',
       ztf: 'square', ztf_fp: 'square-open', tns: 'star' },
     EXTRA_SYMBOLS: ['triangle-up', 'pentagon', 'hexagon', 'cross', 'x', 'hourglass'],
     LIMIT_SYMBOL: 'triangle-down-open',
-    SRC_SHORT: { edp2_dia: 'EDP2 DIA', edp2_fp: 'EDP2 forced', lsst_alert: 'LSST alerts', lsst_alert_fp: 'LSST alert FP',
+    SRC_SHORT: { edp2_dia: 'EDP2 DIA', edp2_fp: 'EDP2 forced', edp2_night: 'EDP2 nightly', lsst_alert: 'LSST alerts', lsst_alert_fp: 'LSST alert FP',
       ztf: 'ZTF', ztf_fp: 'ZTF forced', tns: 'TNS' },
     KIND_LABEL: ['detection', 'forced', 'upper limit'],
     // Rubin difference-image object IDs. Alert-stream IDs are public; the DP2 catalogue ID exists only
@@ -53,6 +54,9 @@
       'n_visits', 'n_visits_active', 'alert_ids', 'shard', 'n_spec', 'spec_types', 'n_spec_plot', 'region', 'debass',
       'edp2_id', 'edp2_sep', 'edp2_ndia', 'edp2_lead', 'edp2_tc', 'edp2_coadd', 'edp2_coadd_bands', 'edp2_stamp',
       'lead_alert', 'rubin_first', 'stamp', 'mdb_psn', 'mdb_pia', 'mdb_ndet', 'mdb_sv', 'mdb_ins', 'clf_n'],
+    // DP2 SALT-pass candidates (team only): nested SALT fit-quality tiers, strictest first. Not classifications.
+    SALT_TIERS: ['strict', 'good', 'broad'],
+    SALT_LABEL: { strict: 'Strict', good: 'Good', broad: 'Broad' },
     // Classifier calls (build/classifiers.py): I Ia, S SN other than Ia, N SN (subtype not given), O not SN, n not Ia.
     CALL_LABEL: { I: 'SN Ia', S: 'SN, not Ia', N: 'SN', O: 'not SN', n: 'not Ia' },
     RF_LABEL: { rubin: 'Discovered in Rubin data', earlier: 'Rubin alert before TNS discovery', later: 'Rubin alert after TNS discovery',
@@ -373,10 +377,18 @@
   };
   // A shard is public data/lc/NNN.js, plus the decrypted data/edp2/NNN.js when team access is unlocked.
   // S.shards[n] is set only once both parts are merged.
+  X.isXShard = function (n) { return n >= K.XSHARD_BASE; };
   X.loadShard = function (n) {
     if (S.shards[n]) return Promise.resolve(S.shards[n]);
     if (S.shardPromises[n]) return S.shardPromises[n];
-    var src = 'data/lc/' + U.pad3(n) + '.js';
+    // team-only rows have no public shard: the private build writes data/lc/xNNN.js, the public site only data/edp2/xNNN.js
+    if (X.isXShard(n) && !(S.meta.mode === 'private' && !S.meta.team)) {
+      var px = X.team && X.team.unlocked ? X.team.shard(n) : Promise.resolve({});
+      S.shardPromises[n] = px.then(function (d) { S.shards[n] = X.team && X.team.unlocked ? X.team.mergeShard({}, d) : d; return S.shards[n]; });
+      S.shardPromises[n].catch(function () { delete S.shardPromises[n]; });
+      return S.shardPromises[n];
+    }
+    var src = 'data/lc/' + (X.isXShard(n) ? 'x' + U.pad3(n - K.XSHARD_BASE) : U.pad3(n)) + '.js';
     var pub = U.loadScript(src).then(function () {
       var d = S.shardRaw[n];
       delete S.shardRaw[n];
@@ -391,6 +403,7 @@
   };
   // TNS spectra of one shard: {name: [{t, tel, inst, grp, url, w0, dw, f}]}. Only shards that hold spectra exist.
   X.loadSpec = function (n) {
+    if (X.isXShard(n)) return Promise.resolve({});
     if (!S.specPromises[n]) {
       var src = 'data/spec/' + U.pad3(n) + '.js';
       S.specPromises[n] = U.loadScript(src).then(function () {
@@ -404,6 +417,7 @@
   };
   // Classifier tracks of one shard: {name: [track, ...]} (build/assemble.py classifier_shards). Sparse like spectra.
   X.loadClf = function (n) {
+    if (X.isXShard(n)) return Promise.resolve({});
     if (!S.clfPromises[n]) {
       var src = 'data/clf/' + U.pad3(n) + '.js';
       S.clfPromises[n] = U.loadScript(src).then(function () {
@@ -442,6 +456,9 @@
     });
     return names;
   };
+  // A row of the team-only DP2 SALT list with no TNS counterpart in this catalogue (name = DP2 diaObjectId).
+  X.isDp2Only = function (i) { var s = U.V(i, 'shard'); return U.isNum(s) && s >= K.XSHARD_BASE; };
+  X.saltTier = function (i) { return U.has('edp2_salt') ? U.V(i, 'edp2_salt') : null; };
   X.shardOf = function (i) { var s = U.V(i, 'shard'); return U.isNum(s) ? s : Math.floor(i / K.SHARD_SIZE); };
   X.ensurePlotly = function () {
     if (window.Plotly) return Promise.resolve(window.Plotly);
@@ -527,13 +544,15 @@
     var pts = 0;
     Object.keys(S.meta.sources || {}).forEach(function (k) { pts += S.meta.sources[k].n_points || 0; });
     S.totalPoints = pts;
-    var jt = S.C.type, typed = 0, dmin = Infinity, dmax = -Infinity, jd = S.C.disc_mjd;
+    var jt = S.C.type, typed = 0, dmin = Infinity, dmax = -Infinity, jd = S.C.disc_mjd, nx = 0;
     for (i = 0; i < S.N; i++) {
+      if (X.isDp2Only(i)) { nx++; continue; }                 // team-only DP2 rows: not TNS objects
       if (jt !== undefined && S.rows[i][jt]) typed++;
       var dm = S.rows[i][jd];
       if (U.isNum(dm)) { if (dm < dmin) dmin = dm; if (dm > dmax) dmax = dm; }
     }
     S.nTyped = typed; S.discMin = dmin; S.discMax = dmax;
+    S.nDp2Only = nx; S.nTns = S.N - nx;
 
     if (S.isPrivate) {
       document.documentElement.classList.add('is-private');
@@ -547,7 +566,8 @@
       mb.hidden = false;
     }
     var built = U.fmtBuilt(S.meta.built);
-    document.getElementById('footer-built').textContent = 'TNS × EDP2 Explorer · ' + U.fint(S.N) + ' transients · ' +
+    document.getElementById('footer-built').textContent = 'TNS × EDP2 Explorer · ' + U.fint(S.nTns) + ' TNS transients' +
+      (S.nDp2Only ? ' + ' + U.fint(S.nDp2Only) + ' DP2 SALT candidates' : '') + ' · ' +
       (S.meta.team ? 'team access unlocked' : S.isPrivate ? 'private build' : 'public build') + (built ? ' · built ' + built : '');
   }
 

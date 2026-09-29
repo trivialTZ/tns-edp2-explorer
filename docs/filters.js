@@ -63,7 +63,8 @@
     addCat({ id: 'type', label: 'TNS classification', values: types.map(function (t) { return { v: t[0], label: t[0] === '__none__' ? 'Untyped' : t[0] }; }),
       get: function (i) { return F.typeKey[i]; }, search: true, open: true, show: 8 });
     var jp = C.prefix;
-    addCat({ id: 'pre', label: 'Name prefix', values: [{ v: 'SN', label: 'SN · supernova' }, { v: 'AT', label: 'AT · astronomical transient' }],
+    addCat({ id: 'pre', label: 'Name prefix', values: [{ v: 'SN', label: 'SN · supernova' }, { v: 'AT', label: 'AT · astronomical transient' }]
+      .concat(S.nDp2Only ? [{ v: 'DP2', label: 'DP2 · SALT candidate, not in TNS here' }] : []),
       get: function (i) { return rows[i][jp]; }, open: true });
     if (C.n_spec !== undefined) {
       var js = C.n_spec;
@@ -153,6 +154,15 @@
           get: function (i) { return rows[i][jco] === true ? '1' : '0'; },
           note: 'The position falls inside a DP2 deep-coadd patch (dp2.CoaddPatches).' });
       }
+      // DP2 SALT-pass candidates (team only; build/dp2_salt.py): the tightest tier each row reaches
+      if (C.edp2_salt !== undefined) {
+        var jsl = C.edp2_salt;
+        addCat({ id: 'salt', label: 'DP2 SALT tier', private: true, open: true, get: function (i) { return rows[i][jsl] || '__none__'; },
+          values: [{ v: 'strict', label: 'Strict' }, { v: 'good', label: 'Good, not strict' }, { v: 'broad', label: 'Broad only' }, { v: '__none__', label: 'Not a SALT candidate' }],
+          note: 'Whole-DP2 supernova search: SALT3 fit-quality tiers, nested (strict ⊂ good ⊂ broad), so the good tier is Strict + Good. Not spectroscopic classifications.' });
+        addCat({ id: 'smp', label: 'Catalogue', private: true, open: true, get: function (i) { return X.isDp2Only(i) ? 'dp2' : 'tns'; },
+          values: [{ v: 'tns', label: 'TNS objects' }, { v: 'dp2', label: 'DP2 candidates, not in TNS here' }] });
+      }
       var jtc = C.edp2_tc;
       addCat({ id: 'etc', label: 'EDP2 time-consistent', private: true, open: false,
         values: [{ v: '1', label: 'Time-consistent' }, { v: '0', label: 'No / not applicable' }],
@@ -237,6 +247,12 @@
       var gl = colGetter('edp2_lead'), lq = quantiles(colValues(gl), [0.01, 0.99]);
       addNum({ id: 'elead', label: 'EDP2 lead time', get: gl, edges: linEdges(lq[0] == null ? -30 : lq[0], lq[1] == null ? 30 : lq[1], 24), type: 'float', fmt: fmtNum(1), unit: ' d', private: true, open: false,
         note: 'TNS discovery − first positive EDP2 detection; > 0 means EDP2 saw it first.' });
+      if (C.edp2_salt_z !== undefined) {
+        addNum({ id: 'sz', label: 'SALT redshift', get: colGetter('edp2_salt_z'), edges: linEdges(0, 1.0, 20), type: 'float', fmt: fmtNum(3), private: true, open: false,
+          note: 'Photometric redshift from the SALT3 fit (DP2 SALT candidates only).' });
+        addNum({ id: 'sx1', label: 'SALT x1', get: colGetter('edp2_salt_x1'), edges: linEdges(-3, 3, 24), type: 'float', fmt: fmtNum(2), private: true, open: false });
+        addNum({ id: 'sc', label: 'SALT colour c', get: colGetter('edp2_salt_c'), edges: linEdges(-0.3, 0.5, 16), type: 'float', fmt: fmtNum(2), private: true, open: false });
+      }
     }
     // background (unfiltered) histograms
     F.num.forEach(function (d) { d.bg = hist(d, null); });

@@ -49,8 +49,9 @@ MAX_CHECK_PLAIN = 64             # the key-check plaintext is a short constant
 _B64 = r"([A-Za-z0-9+/]+={0,2})"
 KEYINFO_RE = re.compile(r'TNSX\.onKeyInfo\(\{"v":1,"kdf":"PBKDF2-SHA256","iter":(\d{6,8}),"salt":"' + _B64 +
                         r'","check":\{"iv":"' + _B64 + r'","ct":"' + _B64 + r'"\}\}\);\n?')
-ENC_RE = re.compile(r'TNSX\.onEnc\("(catalog|lc-\d{3})",\{"iv":"' + _B64 + r'","ct":"' + _B64 + r'"\}\);\n?')
+ENC_RE = re.compile(r'TNSX\.onEnc\("(catalog|lc-\d{3}|lc-x\d{3})",\{"iv":"' + _B64 + r'","ct":"' + _B64 + r'"\}\);\n?')
 SHARD_FILE = re.compile(r"\d{3}\.js")
+XSHARD_FILE = re.compile(r"x\d{3}\.js")   # team-only rows with no public row (DP2 SALT candidates): x000.js ...
 
 # ---- host galaxies (data/catalog.js "hosts" table, data/hosts/<name>.webp)
 HOST_COL = re.compile(r"host_[a-z0-9_]+")
@@ -98,7 +99,7 @@ def parse_enc(txt: str) -> tuple[str, bytes, bytes]:
     """Parse catalog.js / NNN.js; raise ValueError unless it has exactly the allowed shape."""
     m = ENC_RE.fullmatch(txt)
     if not m:
-        raise ValueError('not exactly TNSX.onEnc("catalog"|"lc-NNN",{iv,ct})')
+        raise ValueError('not exactly TNSX.onEnc("catalog"|"lc-NNN"|"lc-xNNN",{iv,ct})')
     name, iv, ct = m.group(1), _b64(m.group(2)), _b64(m.group(3))
     if len(iv) != IV_BYTES:
         raise ValueError("iv must be 12 bytes")
@@ -111,14 +112,15 @@ def parse_enc(txt: str) -> tuple[str, bytes, bytes]:
 
 
 def check_enc_dir(root: Path) -> list[str]:
-    """Errors for docs/data/edp2/: only the encrypted shapes, one file per lightcurve shard."""
+    """Errors for docs/data/edp2/: only the encrypted shapes, one file per lightcurve shard, plus
+    x000.js .. xNNN.js (contiguous) for team-only rows that have no public row."""
     d = root / "data" / ENC_DIR
     if not d.exists():
         return []
     errs = []
     if not d.is_dir():
         return [f"data/{ENC_DIR}: must be a directory"]
-    shards = set()
+    shards, xshards = set(), set()
     for f in sorted(d.iterdir()):
         rel = f"data/{ENC_DIR}/{f.name}"
         if not f.is_file():
@@ -128,15 +130,17 @@ def check_enc_dir(root: Path) -> list[str]:
         try:
             if f.name == "keyinfo.js":
                 parse_keyinfo(txt)
-            elif f.name == "catalog.js" or SHARD_FILE.fullmatch(f.name):
+            elif f.name == "catalog.js" or SHARD_FILE.fullmatch(f.name) or XSHARD_FILE.fullmatch(f.name):
                 name = parse_enc(txt)[0]
-                want = "catalog" if f.name == "catalog.js" else "lc-" + f.name[:3]
+                want = "catalog" if f.name == "catalog.js" else "lc-" + f.name[:-3]
                 if name != want:
                     raise ValueError(f"blob name {name!r} does not match the file name (want {want!r})")
-                if f.name != "catalog.js":
+                if XSHARD_FILE.fullmatch(f.name):
+                    xshards.add(f.name)
+                elif f.name != "catalog.js":
                     shards.add(f.name)
             else:
-                raise ValueError(f"unexpected file; data/{ENC_DIR}/ may hold only keyinfo.js, catalog.js and NNN.js")
+                raise ValueError(f"unexpected file; data/{ENC_DIR}/ may hold only keyinfo.js, catalog.js, NNN.js and xNNN.js")
         except ValueError as e:
             errs.append(f"{rel}: {e}")
     for need in ("keyinfo.js", "catalog.js"):
@@ -147,6 +151,8 @@ def check_enc_dir(root: Path) -> list[str]:
     if shards != public:
         errs.append(f"data/{ENC_DIR}/: shard files must match data/lc/ one to one "
                     f"({len(shards - public)} extra, {len(public - shards)} missing)")
+    if xshards != {f"x{k:03d}.js" for k in range(len(xshards))}:
+        errs.append(f"data/{ENC_DIR}/: xNNN.js files must run from x000.js without gaps")
     return errs
 
 

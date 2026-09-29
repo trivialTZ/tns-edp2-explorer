@@ -248,6 +248,7 @@ Written by `build/assemble.py --mode public --encrypt-edp2` through
 docs/data/edp2/keyinfo.js   TNSX.onKeyInfo({"v":1,"kdf":"PBKDF2-SHA256","iter":600000,"salt":B64,"check":{"iv":B64,"ct":B64}});
 docs/data/edp2/catalog.js   TNSX.onEnc("catalog",{"iv":B64,"ct":B64});
 docs/data/edp2/NNN.js       TNSX.onEnc("lc-NNN",{"iv":B64,"ct":B64});   one per data/lc/NNN.js, empty shards included
+docs/data/edp2/xNNN.js      TNSX.onEnc("lc-xNNN",{"iv":B64,"ct":B64});  team-only rows (x000 ... without gaps), optional
 ```
 
 Crypto:
@@ -295,12 +296,40 @@ catalog  {"v":1,
           "rows":[[...], ...],                     // one per name, aligned with names
           "sources":{"edp2_dia":{label,desc,survey,n_objects,n_points}, "edp2_fp":{...}},
           "notes":[private-build About notes], "match_radius_arcsec":2.0,
-          "hosts":{"cols":[...], "rows":[...]}}   // optional: encrypted-only host rows, plus the
+          "hosts":{"cols":[...], "rows":[...]},   // optional: encrypted-only host rows, plus the
                                                   // full values of public rows while fits are withheld
+          "extra":{"cols":["name","prefix","ra","dec","disc_mjd","region","shard","edp2_id",...],
+                   "rows":[[...], ...]},          // optional: rows with no public row (DP2 SALT list below)
+          "salt":{n, tiers, nested, in_catalogue, dp2_only, tns_outside, new_fits, mi621, hosts, xshard_base}}
 lc-NNN   {"2025abc": {"edp2_dia": LC, "edp2_fp": LC}, ...,  // LC as in section 2; {} if none
           "_hosts": {"2025xyz": "data:image/webp;base64,..."},   // optional: figures of encrypted-only host rows
           "_stamps": {"2025abc": "data:image/webp;base64,..."}}  // optional: DP2 deep-coadd stamps (edp2_stamp)
+lc-xNNN  the same shape for the team-only rows of catalogue shard 10000 + NNN
 ```
+
+### DP2 SALT candidates (team only)
+
+`build/dp2_salt.py` adds the SALT-pass candidates of the whole-DP2 supernova search
+(`recall_salt_completion_v1_20260928` on NERSC; export in `PRIVATE/dp2_salt/`): 2,857 broad
+⊇ 2,316 good ⊇ 564 strict. These are SALT3 fit-quality tiers, not classifications. All of it is
+DP2-derived, so it exists only in this encrypted layer and in the private build.
+
+- A candidate within 2" of a TNS object in the catalogue puts its values on that row (one
+  candidate per row, the higher tier first). The others are `extra` rows: `name` = the DP2
+  diaObjectId (a string), `prefix` = `DP2`, `disc_mjd` = the first nightly forced point with
+  S/N >= 5, `shard` = 10000 + k (docs/app.js `K.XSHARD_BASE`), lightcurves in `xNNN.js` (the
+  private build writes `data/lc/xNNN.js` with `TNSX.onShard(10000 + NNN, ...)`).
+- Columns: `edp2_salt` (tightest tier: `strict`, `good`, `broad`), `edp2_salt_id` (the fitted
+  diaObjectId), `edp2_salt_{z,zerr,t0,t0err,x1,x1err,c,cerr,x0,rchi2,dof}`, `edp2_salt_nsig5`
+  (nights with S/N >= 5), `edp2_salt_nights`, `edp2_salt_new` (passed only after the completion
+  run fitted it), `edp2_salt_mi` (in Mi's 621 list), `edp2_salt_iac` / `edp2_salt_dmu` (Hubble
+  residual at its own z and Δμ > -0.6; information only), `edp2_salt_alt`, `edp2_salt_mwebv`, and
+  for extra rows `edp2_salt_tns{,sep,type}` (a TNS object within 2" that is not in the catalogue).
+- Shard entries: `edp2_night` (extra rows: the nightly inverse-variance points the fit used, an
+  LC with kind 1 and note `n=<visits>`) and `edp2_salt` = `{"t0", "dt", "m": {band: [nJy]},
+  "bl": {band: nJy}}`, the SALT3 model plus its fitted per-band baseline on the grid t0 + k dt.
+- Hosts: the DP2 run of the host pipeline (`HOSTS_DP2`), for rows the TNS run does not cover;
+  the SALT z is never used to choose a host.
 
 The site merges the encrypted `hosts` rows into the host columns by name. Rows
 that only the encrypted table has are marked "team access" on their cards.

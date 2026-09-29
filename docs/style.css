@@ -487,6 +487,7 @@ td .none { color: var(--faint); }
 .obj-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; }
 .obj-title h1 { font: 650 clamp(44px, 6vw, 76px)/0.95 var(--display); letter-spacing: -0.035em; }
 .obj-title h1 .pfx { font: 500 0.36em/1 var(--font); letter-spacing: 0.02em; color: var(--muted); vertical-align: 0.9em; margin-right: 0.35em; }
+.obj-title h1.dp2-id { font-size: clamp(30px, 4vw, 48px); overflow-wrap: anywhere; }   /* 18-digit DP2 diaObjectIds */
 .obj-title .tags { display: flex; gap: 8px; align-items: center; transform: translateY(-8px); }
 .coords { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; }
 .coord { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
@@ -803,3 +804,4 @@ details.colref td.mono { white-space: nowrap; font-size: 12.5px; }
   .clf-card, .lead-card { padding: 16px 12px; }
   .clf-grid th.lab { min-width: 118px; max-width: 130px; white-space: normal; }
 }
+.salt-card { margin-top: 40px; padding: 24px; }   /* DP2 SALT fit (team only) */

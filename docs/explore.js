@@ -6,7 +6,7 @@
   var E = { page: 0, pageSize: 100, built: false, ptsTab: null, open: {}, facetMore: {}, find: {} };
   var PAGE_SIZES = [50, 100, 250, 500];
   var HW = 280, HH = 44;   // facet histogram viewBox
-  var COLS_KEY = 'tnsx-cols-v3';   // v3: Rubin lead and metaDEBASS columns; older saved choices would hide them
+  var COLS_KEY = 'tnsx-cols-v4';   // v4: DP2 SALT columns (team access); older saved choices would hide new columns
 
   // ------------------------------------------------------------------ columns
   function columnDefs() {
@@ -41,6 +41,9 @@
       if (U.has('edp2_lead')) c.push({ id: 'edp2_lead', label: 'EDP2 lead', sub: 'days', num: true, on: true, priv: true });
       if (U.has('edp2_tc')) c.push({ id: 'edp2_tc', label: 'EDP2 time-consistent', on: false, priv: true });
       if (U.has('edp2_coadd_bands')) c.push({ id: 'edp2_coadd_bands', label: 'EDP2 coadd', sub: 'bands', on: true, priv: true, title: 'Bands with a DP2 deep coadd at this position' });
+      if (U.has('edp2_salt')) c.push({ id: 'edp2_salt', label: 'SALT tier', sub: 'DP2 search', on: true, priv: true, title: 'Whole-DP2 SN search: SALT3 fit-quality tier (strict ⊂ good ⊂ broad); not a classification' },
+        { id: 'edp2_salt_z', label: 'SALT z', num: true, on: true, priv: true, title: 'Photometric redshift from the SALT3 fit' },
+        { id: 'edp2_salt_x1', label: 'SALT x1', num: true, on: false, priv: true }, { id: 'edp2_salt_c', label: 'SALT c', num: true, on: false, priv: true });
     }
     c.push({ id: 'ra', label: 'RA', sub: 'deg', num: true, on: false, mono: true }, { id: 'dec', label: 'Dec', sub: 'deg', num: true, on: false, mono: true },
       { id: 'internal', label: 'Internal names', on: false });
@@ -515,6 +518,9 @@
       case 'edp2_id': v = V(i, 'edp2_id'); return '<td class="mono">' + (v != null && v !== '' ? esc(v) : '<span class="none">—</span>') + '</td>';
       case 'edp2_coadd_bands': v = V(i, 'edp2_coadd_bands');
         return '<td class="mono">' + (V(i, 'edp2_coadd') === true ? esc(v || '') : '<span class="none">outside</span>') + '</td>';
+      case 'edp2_salt': v = V(i, 'edp2_salt'); return '<td>' + (v ? esc(K.SALT_LABEL[v] || v) : '<span class="none">—</span>') + '</td>';
+      case 'edp2_salt_z': case 'edp2_salt_x1': case 'edp2_salt_c': v = V(i, c.id);
+        return '<td class="num">' + (U.isNum(v) ? U.fx(v, c.id === 'edp2_salt_z' ? 3 : 2) : '<span class="none">—</span>') + '</td>';
       case 'edp2_tc': v = V(i, 'edp2_tc'); return '<td>' + (v === true || v === 1 ? 'yes' : v === false || v === 0 ? 'no' : '<span class="none">—</span>') + '</td>';
       case 'ra': return '<td class="num mono">' + U.fx(V(i, 'ra'), 5) + '</td>';
       case 'dec': return '<td class="num mono">' + U.fx(V(i, 'dec'), 5) + '</td>';

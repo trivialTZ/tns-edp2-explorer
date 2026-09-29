@@ -134,6 +134,22 @@ class Layer(unittest.TestCase):
         (self.site / "data" / "leak.txt").unlink()
         self.assertEqual(self.build()["key"], "kept")
 
+    def test_team_only_shards_round_trip(self):
+        xs = {0: {"735000000000000001": {"edp2_night": LC(4), "edp2_salt": {"t0": 60900.0, "dt": 2.0, "m": {"r": [1, 2]}, "bl": {"r": 0.0}}}},
+              1: {"735000000000000002": {"edp2_night": LC(2)}}}
+        with contextlib.redirect_stdout(io.StringIO()):
+            CL.write_layer(self.site / "data", PW, self.catalog, self.shards, 3, {"735000000000000001"},
+                           state_file=self.state, xshards=xs)
+        self.assertEqual(sorted(f.name for f in self.enc.glob("x*.js")), ["x000.js", "x001.js"])
+        key = CL.derive_key(PW, CP.parse_keyinfo((self.enc / "keyinfo.js").read_text())["salt"])
+        name, iv, ct = CP.parse_enc((self.enc / "x000.js").read_text())
+        self.assertEqual(name, "lc-x000")
+        import json
+        self.assertEqual(json.loads(CL.unseal(key, name, iv, ct)), CL._roundtrip(xs[0]))
+        self.assertNotIn(b"735000000000000001", (self.enc / "x000.js").read_bytes())
+        with self.assertRaises(CL.LayerError):
+            CL.write_layer(self.site / "data", PW, self.catalog, self.shards, 3, set(), state_file=self.state, xshards={1: {}})
+
     def test_state_is_private(self):
         self.build()
         self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)

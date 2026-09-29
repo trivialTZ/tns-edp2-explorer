@@ -3,7 +3,7 @@
   'use strict';
   var X = window.TNSXApp, S = X.S, U = X.U, K = X.K;
   var $ = U.$, esc = U.esc, V = U.V;
-  var LC = { srcOff: new Set(), famOff: new Set(), showUL: true, showFP: true, snCut: true, y: 'flux', x: 'mjd', ticks: true, merge: false };
+  var LC = { srcOff: new Set(), famOff: new Set(), showUL: true, showFP: true, snCut: true, y: 'flux', x: 'mjd', ticks: true, merge: false, salt: true };
   var O = null;       // current object's plot data
   var cur = null;     // current object index
 
@@ -39,7 +39,7 @@
     }
     cur = i; S.lastObj = i; O = null;
     document.title = U.fullName(i) + ' · TNS EDP2 Explorer';
-    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) + hostCardHtml(i) +
+    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) + saltCardHtml(i) + hostCardHtml(i) +
       '<section class="card lc-card" aria-labelledby="lc-h"><div class="lc-head"><h2 id="lc-h">Lightcurve</h2><div class="lc-ctl" id="lc-ctl"></div></div>' +
       '<div id="lc-legend"></div>' +
       '<div class="lc-plot" id="lc-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:260px;height:10px;margin:0 auto 10px"></span>Loading lightcurve…</div></div></div>' +
@@ -96,6 +96,7 @@
     return h;
   }
   function heroHtml(i) {
+    if (X.isDp2Only(i)) return dp2HeroHtml(i);
     var name = V(i, 'name'), pre = V(i, 'prefix'), type = V(i, 'type'), z = V(i, 'z');
     var ra = V(i, 'ra'), dec = V(i, 'dec'), disc = V(i, 'disc_mjd');
     var internal = String(V(i, 'internal') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
@@ -103,7 +104,7 @@
     var sexa = U.raHms(ra) + ' ' + U.decDms(dec);
     var h = '<header class="obj-hero"><div class="obj-title"><h1 tabindex="-1">' + (pre ? '<span class="pfx">' + esc(pre) + '</span>' : '') + esc(name) + '</h1>' +
       '<div class="tags">' + (type ? '<span class="pill">' + esc(type) + '</span>' : '<span class="pill outline">Untyped</span>') +
-      tagLinks(i) + (U.isNum(z) ? '<span class="muted tabular">z = ' + U.fx(z, 4) + '</span>' : '') + '</div></div>';
+      tagLinks(i) + saltPill(i) + (U.isNum(z) ? '<span class="muted tabular">z = ' + U.fx(z, 4) + '</span>' : '') + '</div></div>';
     h += '<div class="coords">' +
       '<span class="coord"><span class="lbl">RA</span><span class="mono">' + U.fx(ra, 6) + '°</span>' + copyBtn(U.fx(ra, 6), 'RA in degrees') + '</span>' +
       '<span class="coord"><span class="lbl">Dec</span><span class="mono">' + U.signed(dec, 6) + '°</span>' + copyBtn((dec >= 0 ? '+' : '-') + Math.abs(dec).toFixed(6), 'Dec in degrees') + '</span>' +
@@ -137,7 +138,7 @@
     if (U.has('n_visits')) h += fact('LSSTCam pointings', U.fint(V(i, 'n_visits')) + ' <span class="muted">within 2.1°</span>',
       U.has('n_visits_active') ? U.fint(V(i, 'n_visits_active')) + ' during [discovery − 30, + 100] d' : '');
     S.cols.filter(function (c) {
-      if (K.KNOWN_COLS.indexOf(c) >= 0 || /^host_/.test(c)) return false;
+      if (K.KNOWN_COLS.indexOf(c) >= 0 || /^(host_|edp2_salt)/.test(c)) return false;
       var m = /^(n|t0|t1)_(.+)$/.exec(c);
       return !(m && ((S.meta.sources || {})[m[2]] || K.SRC_SHORT[m[2]]));
     }).forEach(function (c) { var v = V(i, c); h += fact(c, v == null || v === '' ? '—' : esc(typeof v === 'object' ? JSON.stringify(v) : v)); });
@@ -168,6 +169,76 @@
     h += '<div class="links" aria-label="External links">' + L.join('') + '</div></header>';
     return h;
   }
+  // ------------------------------------------------------------------ DP2 SALT candidates (team only; build/dp2_salt.py)
+  // A row of its own when no TNS object of this catalogue lies within 2": named by its DP2 diaObjectId.
+  function coordsHtml(ra, dec) {
+    var sexa = U.raHms(ra) + ' ' + U.decDms(dec);
+    return '<div class="coords">' +
+      '<span class="coord"><span class="lbl">RA</span><span class="mono">' + U.fx(ra, 6) + '°</span>' + copyBtn(U.fx(ra, 6), 'RA in degrees') + '</span>' +
+      '<span class="coord"><span class="lbl">Dec</span><span class="mono">' + U.signed(dec, 6) + '°</span>' + copyBtn((dec >= 0 ? '+' : '-') + Math.abs(dec).toFixed(6), 'Dec in degrees') + '</span>' +
+      '<span class="coord"><span class="mono">' + esc(sexa) + '</span>' + copyBtn(sexa.replace('−', '-'), 'sexagesimal coordinates') + '</span></div>';
+  }
+  function saltPill(i) {
+    var t = X.saltTier(i);
+    if (!t) return '';
+    var q = K.SALT_TIERS.slice(0, K.SALT_TIERS.indexOf(t) + 1).map(function (x) { return 'salt=' + x; }).join('&amp;');   // nested tiers
+    return '<a class="pill private" href="#/explore?' + q + '" title="DP2 SALT fit-quality tier (strict ⊂ good ⊂ broad). Show every candidate in this tier">SALT ' + esc(K.SALT_LABEL[t] || t) + '</a>';
+  }
+  function dp2HeroHtml(i) {
+    var id = String(V(i, 'name')), ra = V(i, 'ra'), dec = V(i, 'dec'), disc = V(i, 'disc_mjd'), rg = V(i, 'region');
+    var h = '<header class="obj-hero"><div class="obj-title"><h1 class="dp2-id" tabindex="-1"><span class="pfx">DP2</span>' + esc(id) + '</h1>' +
+      '<div class="tags"><span class="pill outline">Not in TNS here</span>' + saltPill(i) +
+      (rg ? '<a class="pill outline" href="#/explore?reg=' + encodeURIComponent(rg) + '">' + esc(U.regionLabel(rg)) + '</a>' : '') +
+      (U.isNum(V(i, 'edp2_salt_z')) ? '<span class="muted tabular">SALT z ≈ ' + U.fx(V(i, 'edp2_salt_z'), 3) + '</span>' : '') + '</div></div>';
+    h += coordsHtml(ra, dec);
+    h += '<div class="coords rids"><span class="coord"><span class="lbl">' + esc(K.RID_LABEL.dp2) + '</span><span class="mono">' + esc(id) + '</span>' + copyBtn(id, K.RID_LABEL.dp2 + ' ' + id) + '</span></div>';
+    h += '<p class="private-label">' + U.icon('lock', 2).replace('<svg', '<svg width="12" height="12"') + 'Rubin DP2 · proprietary · team only</p><dl class="facts private-facts">';
+    h += fact('First DP2 detection', esc(U.niceDate(disc)), 'MJD ' + U.fx(disc, 3) + ' · first nightly forced point with S/N ≥ 5');
+    var tn = V(i, 'edp2_salt_tns');
+    h += fact('TNS', tn ? extLink('https://www.wis-tns.org/object/' + encodeURIComponent(String(tn).replace(/^(SN|AT)\s*/, '')), tn) : 'No TNS object within 2″',
+      tn ? U.fx(V(i, 'edp2_salt_tnssep'), 2) + '″ away' + (V(i, 'edp2_salt_tnstype') ? ' · ' + esc(V(i, 'edp2_salt_tnstype')) : '') + ' · not in this catalogue' : 'public TNS objects, 2026-09-24 list');
+    if (U.has('n_edp2_night')) h += fact('Nightly DP2 points', U.fint(V(i, 'n_edp2_night')), 'forced photometry, one point per band and night');
+    var co = V(i, 'edp2_stamp');
+    h += fact('DP2 deep coadd', co ? 'Stamp <span class="mono">' + esc(String(co).split('').join(' ')) + '</span>' : '—');
+    h += '</dl>';
+    var L = [];
+    if (U.isNum(ra) && U.isNum(dec)) L.push(extLink('https://www.legacysurvey.org/viewer?ra=' + ra.toFixed(6) + '&dec=' + dec.toFixed(6) + '&layer=ls-dr10&zoom=16&mark=' + ra.toFixed(6) + ',' + dec.toFixed(6), 'Legacy Survey'));
+    return h + '<div class="links" aria-label="External links">' + L.join('') + '</div></header>';
+  }
+  function pm(v, e, d) { return U.isNum(v) ? '<span class="tabular">' + U.signed(v, d).replace('+', '') + (U.isNum(e) ? ' <span class="muted">± ' + U.fx(e, d) + '</span>' : '') + '</span>' : '—'; }
+  function yesNo(v) { return v === true ? 'Yes' : v === false ? 'No' : '—'; }
+  function saltCardHtml(i) {
+    var t = X.saltTier(i);
+    if (!t) return '';
+    var nested = t === 'strict' ? 'in all three tiers' : t === 'good' ? 'in good and broad, not strict' : 'in broad only';
+    var h = '<section class="card salt-card" aria-labelledby="salt-h"><div class="lc-head"><h2 id="salt-h">SALT3 fit</h2>' +
+      '<span class="pill private">DP2 · team only</span></div>' +
+      '<p class="clf-lede">From the whole-DP2 supernova search (every recall-pool object fitted with SALT3 on its DP2 forced photometry). ' +
+      'Tier <b>' + esc(K.SALT_LABEL[t] || t) + '</b>, ' + nested + '. These are fit-quality tiers, not spectroscopic classifications: ' +
+      'a candidate is not a confirmed SN Ia, and the fit uses the pipeline’s working noise model.</p><dl class="facts">';
+    h += fact('Redshift (SALT, photometric)', pm(V(i, 'edp2_salt_z'), V(i, 'edp2_salt_zerr'), 3));
+    var t0 = V(i, 'edp2_salt_t0');
+    h += fact('Peak time t0', U.isNum(t0) ? esc(U.niceDate(t0)) : '—', U.isNum(t0) ? 'MJD ' + U.fx(t0, 2) + (U.isNum(V(i, 'edp2_salt_t0err')) ? ' ± ' + U.fx(V(i, 'edp2_salt_t0err'), 2) + ' d' : '') : '');
+    h += fact('Stretch x1', pm(V(i, 'edp2_salt_x1'), V(i, 'edp2_salt_x1err'), 2));
+    h += fact('Colour c', pm(V(i, 'edp2_salt_c'), V(i, 'edp2_salt_cerr'), 3));
+    var rc = V(i, 'edp2_salt_rchi2');
+    h += fact('Reduced χ²', U.isNum(rc) ? '<span class="tabular">' + U.fx(rc, 2) + '</span>' : '—', U.isNum(V(i, 'edp2_salt_dof')) ? U.fint(V(i, 'edp2_salt_dof')) + ' degrees of freedom' : '');
+    h += fact('Nights with S/N ≥ 5', U.isNum(V(i, 'edp2_salt_nsig5')) ? U.fint(V(i, 'edp2_salt_nsig5')) + ' <span class="muted">of ' + U.fint(V(i, 'edp2_salt_nights')) + ' fitted</span>' : '—');
+    var dmu = V(i, 'edp2_salt_dmu');
+    h += fact('Hubble residual Δμ', U.isNum(dmu) ? '<span class="tabular">' + U.signed(dmu, 2) + ' mag</span>' : '—',
+      'at its own SALT z; Ia-consistent (Δμ > −0.6): ' + yesNo(V(i, 'edp2_salt_iac')) + ' · information only, not a cut');
+    h += fact('Milky Way E(B−V)', U.isNum(V(i, 'edp2_salt_mwebv')) ? '<span class="tabular">' + U.fx(V(i, 'edp2_salt_mwebv'), 3) + '</span>' : '—');
+    var notes = [];
+    if (V(i, 'edp2_salt_mi') === true) notes.push('in Mi’s 621-object list');
+    if (V(i, 'edp2_salt_new') === true) notes.push('passed only after the completion run fitted it');
+    if (V(i, 'edp2_salt_alt') === true) notes.push('an alternative-redshift start fits almost as well');
+    var sid = V(i, 'edp2_salt_id');
+    if (sid && V(i, 'edp2_id') && String(sid) !== String(V(i, 'edp2_id'))) notes.push('fitted DiaObject ' + esc(sid) + ' differs from the EDP2 match of this TNS object');
+    if (notes.length) h += fact('Notes', notes.join('; '));
+    h += '</dl></section>';
+    return h;
+  }
+
   // ------------------------------------------------------------------ host galaxy (diagnostic)
   // v2 (2026-09-28): every candidate has a probability (the "SNe follow light" posterior,
   // uncalibrated); the leading host is named with a confidence label, and a second candidate
@@ -352,7 +423,7 @@
     });
     var srcs = order.filter(function (s) { return srcCount[s]; }), sym = {}, ex = 0;
     srcs.forEach(function (s) { sym[s] = K.SRC_SYMBOL[s] || K.EXTRA_SYMBOLS[ex++ % K.EXTRA_SYMBOLS.length]; });
-    O = { i: i, name: V(i, 'name'), disc: V(i, 'disc_mjd'), pts: pts, srcs: srcs, srcCount: srcCount, sym: sym,
+    O = { i: i, name: V(i, 'name'), disc: V(i, 'disc_mjd'), salt: lcs.edp2_salt || null, dp2: X.isDp2Only(i), pts: pts, srcs: srcs, srcCount: srcCount, sym: sym,
       fams: K.FAMILIES.filter(function (f) { return famCount[f]; }), famCount: famCount, famBands: famBands, nUL: nUL, nFP: nFP, shown: [], refs: [] };
   }
 
@@ -383,7 +454,8 @@
       '<div class="lc-opts">' + toggle('opt-merge', 'Merge sources', LC.merge, null, false, false,
         'Join the detections and forced photometry of every source with one line per band, in time order') +
       toggle('opt-ul', 'Upper limits', LC.showUL, O.nUL, !O.nUL) + toggle('opt-fp', 'Forced photometry', LC.showFP, O.nFP, !O.nFP) +
-      toggle('opt-sn', 'Forced S/N ≥ 3 only', LC.snCut, null, false, LC.y !== 'mag') + toggle('opt-ticks', 'LSSTCam pointings', LC.ticks) + '</div>';
+      toggle('opt-sn', 'Forced S/N ≥ 3 only', LC.snCut, null, false, LC.y !== 'mag') + toggle('opt-ticks', 'LSSTCam pointings', LC.ticks) +
+      toggle('opt-salt', 'SALT3 fit', LC.salt, null, false, !O.salt, 'The SALT3 model with its fitted per-band baseline (DP2 SALT candidates, team only)') + '</div>';
     wireControls();
   }
   function wireControls() {
@@ -399,6 +471,7 @@
       else if (t.id === 'opt-sn') LC.snCut = t.checked;
       else if (t.id === 'opt-ticks') LC.ticks = t.checked;
       else if (t.id === 'opt-merge') LC.merge = t.checked;
+      else if (t.id === 'opt-salt') LC.salt = t.checked;
       else return;
       updatePlot();
     };
@@ -508,6 +581,22 @@
         refs.push([]);
       });
     }
+    if (O.salt && LC.salt) {
+      var sm = O.salt, xm = function (k) { return LC.x === 'rel' ? sm.t0 + k * sm.dt - O.disc : sm.t0 + k * sm.dt; };
+      Object.keys(sm.m).sort(function (a, b) { return K.FAMILIES.indexOf(U.bandFamily(a)) - K.FAMILIES.indexOf(U.bandFamily(b)); }).forEach(function (b) {
+        var fam = U.bandFamily(b);
+        if (LC.famOff.has(fam)) return;
+        var xs = [], ys = [];
+        sm.m[b].forEach(function (f, k) {
+          if (!U.isNum(f)) return;
+          if (LC.y === 'mag') { if (!(f > 0)) { xs.push(null); ys.push(null); return; } ys.push(U.mag(f)); } else ys.push(f);
+          xs.push(xm(k));
+        });
+        traces.push({ type: 'scatter', mode: 'lines', x: xs, y: ys, line: { color: U.famColor(fam), width: 1.8, shape: 'spline', smoothing: 0.6 },
+          opacity: 0.75, hoverinfo: 'skip', showlegend: false, cliponaxis: true, connectgaps: false });
+        refs.push([]);
+      });
+    }
     groups.forEach(function (g) {
       var col = U.famColor(g.fam), sym = O.sym[g.s] || 'circle';
       if (g.cls === 'f' && !/-open$/.test(sym)) sym += '-open';
@@ -546,7 +635,7 @@
     }
     if (U.isNum(disc)) {
       shapes.push({ type: 'line', xref: 'x', yref: 'paper', x0: X_(disc), x1: X_(disc), y0: 0, y1: 1, line: { color: U.cssVar('--plot-disc'), width: 1, dash: 'dot' }, opacity: 0.7 });
-      ann.push({ text: 'TNS discovery', xref: 'x', yref: 'paper', x: X_(disc), y: 1, xanchor: 'center', yanchor: 'bottom', yshift: 2, showarrow: false, font: { size: 11, color: ink } });
+      ann.push({ text: O.dp2 ? 'First DP2 detection' : 'TNS discovery', xref: 'x', yref: 'paper', x: X_(disc), y: 1, xanchor: 'center', yanchor: 'bottom', yshift: 2, showarrow: false, font: { size: 11, color: ink } });
     }
     if (ticksOn) ann.push({ text: 'LSSTCam pointing ≤' + K.TICK_RADIUS_DEG + '° (coverage not guaranteed)', xref: 'paper', yref: 'paper', x: 0, y: 0.072,
       xanchor: 'left', yanchor: 'bottom', showarrow: false, font: { size: 10.5, color: muted } });
@@ -555,7 +644,7 @@
       margin: { l: 60, r: 12, t: 28, b: 44 }, paper_bgcolor: card, plot_bgcolor: card,
       font: { family: 'Inter, ui-sans-serif, system-ui, sans-serif', size: 12, color: muted },
       hovermode: 'closest', dragmode: 'zoom', showlegend: false, uirevision: O.name + '|' + LC.x + '|' + LC.y,
-      xaxis: { title: { text: LC.x === 'rel' ? 'Days since TNS discovery' : 'MJD', standoff: 10, font: { size: 12, color: muted } },
+      xaxis: { title: { text: LC.x === 'rel' ? (O.dp2 ? 'Days since first DP2 detection' : 'Days since TNS discovery') : 'MJD', standoff: 10, font: { size: 12, color: muted } },
         gridcolor: line, gridwidth: 1, zeroline: false, showline: false, ticks: '', anchor: ticksOn ? 'y2' : 'y', automargin: true,
         exponentformat: 'none', separatethousands: false, tickformat: LC.x === 'rel' ? '' : 'd', tickfont: { color: muted } },
       yaxis: { title: { text: LC.y === 'mag' ? 'AB magnitude' : 'Flux (nJy)', standoff: 8, font: { size: 12, color: muted } }, gridcolor: line, gridwidth: 1,

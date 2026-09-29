@@ -19,11 +19,11 @@
     var srcN = Object.keys(S.meta.sources || {}).length;
     var surveys = [];
     Object.keys(S.meta.sources || {}).forEach(function (k) { var sv = S.meta.sources[k].survey; if (sv && surveys.indexOf(sv) < 0) surveys.push(sv); });
-    var pct = S.N ? Math.round(1000 * S.nTyped / S.N) / 10 : 0;
+    var pct = S.nTns ? Math.round(1000 * S.nTyped / S.nTns) / 10 : 0;
     root.innerHTML = '<div class="wrap">' +
       '<div class="hero"><div><p class="eyebrow" style="margin-bottom:20px">Rubin EDP2 × Transient Name Server</p>' +
       '<h1>Lightcurves for every TNS transient in the Rubin EDP2 footprint</h1></div>' +
-      '<p class="lede">' + U.fint(S.N) + ' transients reported to the Transient Name Server between ' + esc(span.replace(' – ', ' and ')) +
+      '<p class="lede">' + U.fint(S.nTns) + ' transients reported to the Transient Name Server between ' + esc(span.replace(' – ', ' and ')) +
       ', each inside the area Rubin observed for its second data preview. Every page overlays photometry from ' + esc(surveysPhrase()) + ' on one flux scale.' +
       (S.meta.team ? ' Team access is unlocked, so pages add proprietary Rubin DP2 catalogue photometry.' :
         S.isPrivate ? ' This private build adds proprietary Rubin DP2 catalogue photometry.' : '') + '</p>' +
@@ -33,10 +33,10 @@
       '<div class="hero-actions"><a class="btn btn-primary btn-lg" href="#/explore">Explore all ' + U.fint(S.N) + ' ' + U.icon('arrow', 2) + '</a>' +
       '<button type="button" class="btn btn-lg" id="hero-random">' + U.icon('shuffle', 1.8) + 'Random transient</button></div></div>' +
       '<div class="stats">' +
-      stat(U.fint(S.N), 'Transients', span ? 'discovered ' + span : '') +
+      stat(U.fint(S.nTns), 'Transients', span ? 'discovered ' + span : '') +
       stat(U.fint(srcN), 'Photometry sources', surveysPhrase().replace(/^./, function (c) { return c.toUpperCase(); })) +
       stat(U.fint(S.totalPoints), 'Photometry points', 'detections, forced photometry and limits') +
-      stat(U.fint(S.nTyped), 'Spectroscopically typed', pct + '% carry a TNS classification') + '</div>' +
+      stat(U.fint(S.nTyped), 'Spectroscopically typed', pct + '% carry a TNS classification') + '</div>' + saltSection() +
       '<section class="section" aria-labelledby="h-sky"><div class="section-head"><h2 id="h-sky">The sky</h2>' +
       '<p>Every transient on a Mollweide projection of the celestial sphere, east to the left. Narrow it by survey region or by what an object has; click a dot to open its lightcurve.</p></div>' +
       '<div class="card map-card"><div class="sky-tools" id="sky-tools"></div>' +
@@ -67,6 +67,22 @@
     drawLead();
     wireLead();
     H.rendered = true;
+  }
+  // Team only: the DP2 SALT-pass candidates (build/dp2_salt.py), with links to each nested tier in Explore.
+  function saltSection() {
+    var m = S.meta.salt;
+    if (!m || !m.nested) return '';
+    var link = function (t) { return '#/explore?' + K.SALT_TIERS.slice(0, K.SALT_TIERS.indexOf(t) + 1).map(function (x) { return 'salt=' + x; }).join('&'); };
+    var card = function (t, sub) {
+      return '<a class="card src-card" href="' + link(t) + '"><div class="top"><b>' + esc(K.SALT_LABEL[t]) + '</b><span class="pill private">team only</span></div>' +
+        '<div class="stat" style="padding:0"><div class="v">' + U.fint(m.nested[t]) + '</div></div><p class="muted" style="margin:0">' + esc(sub) + '</p></a>';
+    };
+    return '<section class="section" aria-labelledby="h-salt"><div class="section-head"><h2 id="h-salt">DP2 SALT candidates</h2>' +
+      '<p>Supernova candidates from a SALT3 fit of every object in the whole-DP2 search. The tiers are nested and measure fit quality, not type: a candidate is not a confirmed SN Ia. ' +
+      U.fint(m.in_catalogue) + ' are TNS objects already on this site, where they carry the fit; the other ' + U.fint(m.dp2_only) + ' appear as DP2 pages of their own' +
+      (m.tns_outside ? ' (' + U.fint(m.tns_outside) + ' of them lie within 2″ of a TNS object outside this catalogue)' : '') + '.</p></div>' +
+      '<div class="src-grid">' + card('strict', 'the tightest cut (the search’s tier_cosmo)') + card('good', 'includes strict; tighter peak time and early and late coverage') +
+      card('broad', 'every fit passing the complete quality rule') + '</div></section>';
   }
   function stat(v, k, d) {
     return '<div class="card stat"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div>' + (d ? '<div class="d">' + esc(d) + '</div>' : '') + '</div>';
@@ -248,6 +264,8 @@
       d.push({ id: 'edp2', label: 'EDP2 photometry', priv: true, test: function (i) { return ek.some(function (k) { return U.V(i, 'n_' + k) > 0; }); },
         p: ek.map(function (k) { return ['src', k]; }).concat([['srcmode', 'any']]) });
     } else if (offer) d.push({ id: 'edp2', label: 'EDP2 photometry', locked: true });
+    if (team && U.has('edp2_salt')) d.push({ id: 'salt', label: 'DP2 SALT candidates', priv: true, test: function (i) { return !!X.saltTier(i); },
+      p: K.SALT_TIERS.map(function (t) { return ['salt', t]; }) });
     if (U.has('debass')) d.push({ id: 'debass', label: 'DEBASS target', test: function (i) { return !!U.V(i, 'debass'); }, p: [['debass', 'FINISHED'], ['debass', 'YES']] });
     d.push({ id: 'ia', label: 'SN Ia', test: function (i) { return U.classGroup(U.V(i, 'type')) === 'Ia'; }, p: [['cg', 'Ia']] });
     d.push({ id: 'lc', label: 'Lightcurve data', test: hasData, p: S.srcKeys.map(function (k) { return ['src', k]; }).concat([['srcmode', 'any']]) });

@@ -64,7 +64,7 @@
     var built = U.fmtBuilt(M.built);
     document.getElementById('view-about').innerHTML = '<article class="wrap"><div class="prose">' +
       '<p class="eyebrow">About</p><h1>A lightcurve browser for the Rubin EDP2 footprint</h1>' +
-      '<p class="lede">This site gathers the ' + U.fint(S.N) + ' transients reported to the Transient Name Server between ' + esc(span) +
+      '<p class="lede">This site gathers the ' + U.fint(S.nTns) + ' transients reported to the Transient Name Server between ' + esc(span) +
       ' whose positions fall inside the Rubin EDP2 visit footprint, and overlays every lightcurve we could find for them.</p>' +
       '<p class="note">' + (M.team ? 'Public build with the team-access layer unlocked in this browser' : S.isPrivate ? 'Private build' : 'Public build') +
       (built ? ', made ' + esc(built) : '') + '.</p>' +
@@ -96,6 +96,7 @@
       (U.isNum(win.mjd_start) ? '<li>The shaded band is the EDP2 visit window, ' + esc(U.niceDate(win.mjd_start)) + ' to ' + esc(U.niceDate(win.mjd_end)) + ' (MJD ' + U.fx(win.mjd_start, 3) + '–' + U.fx(win.mjd_end, 3) + ').</li>' : '') +
       '</ul>' +
 
+      saltAbout() +
       (U.has('host_status') ? hostSection() : '') +
       (notes ? '<h2>Method notes</h2><ul>' + notes + '</ul>' : '') +
       (stats ? '<h2>Cross-match statistics</h2><p>Aggregate numbers from the TNS × EDP2 cross-match. They are derived data products and contain no catalogue rows.</p>' +
@@ -126,6 +127,22 @@
       '<li><strong>Sky images</strong>: Legacy Surveys DR10 cutouts, and Pan-STARRS1 and DSS2 through the CDS hips2fits service. Rubin alert cutouts come from the public alert packets via Fink.</li>' +
       '<li>Link-outs to <a href="https://www.wiserep.org/" target="_blank" rel="noopener">WISeREP</a> (Yaron &amp; Gal-Yam 2012, PASP 124, 668) and the <a href="https://www.legacysurvey.org/" target="_blank" rel="noopener">DESI Legacy Imaging Surveys</a> viewer. Charts use <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">Plotly.js</a>; the browsing flow follows LSST DESC FASTDB.</li>' +
       '</ul><p>To cite the site and these sources, see <a href="#/data">Data &amp; citation</a>.</p></div></article>';
+  }
+  // Team only: the DP2 SALT list (build/dp2_salt.py).
+  function saltAbout() {
+    var m = S.meta.salt;
+    if (!m || !m.nested) return '';
+    return '<h2>DP2 SALT candidates <span class="pill private" style="vertical-align:middle">team only</span></h2>' +
+      '<p>A search of the whole DP2 catalogue fitted SALT3 to the forced difference photometry of every object in its recall pool (' +
+      'inverse-variance nightly points in g r i z y, a free baseline per band, the native DP2 passbands and Milky Way dust). ' +
+      'This list holds the ' + U.fint(m.nested.broad) + ' fits that pass the search’s complete quality rule (broad), with its nested good (' + U.fint(m.nested.good) +
+      ') and strict (' + U.fint(m.nested.strict) + ') subsets. The broad rule asks for a converged fit away from the parameter bounds, |x1| < 3, −0.3 < c < 0.5, ' +
+      'x1 error < 1, colour error < 0.15, a peak-time error below 5 (1 + z) days, reduced χ² < 3 and at least five S/N > 5 phase bins in two or more bands; ' +
+      'good tightens the peak time and asks for early and late coverage.</p>' +
+      '<p>The tiers measure fit quality, not type: a candidate is not a spectroscopically confirmed SN Ia, and the χ² uses the search’s working noise model. ' +
+      'The Hubble residual on each SALT card is information only and plays no part in the tiers. ' + U.fint(m.in_catalogue) + ' candidates are TNS objects already on this site and carry the fit on their own page; ' +
+      'the other ' + U.fint(m.dp2_only) + ' have DP2 pages named by their diaObjectId, with the nightly points the fit used, the SALT3 model and a DP2 deep-coadd stamp. ' +
+      'Their host galaxies come from the same host pipeline, with the search cone of objects without a TNS redshift: the SALT redshift is not used to choose the host, so host properties stay independent of the lightcurve fit.</p>';
   }
   X.views.about = {
     init: function () { render(); },

@@ -13,6 +13,7 @@ Format (SCHEMA.md section 3; docs/team.js is the reader):
     keyinfo.js  TNSX.onKeyInfo({"v":1,"kdf":"PBKDF2-SHA256","iter":600000,"salt":b64,"check":{"iv":b64,"ct":b64}})
     catalog.js  TNSX.onEnc("catalog",{"iv":b64,"ct":b64})
     NNN.js      TNSX.onEnc("lc-NNN",{"iv":b64,"ct":b64})
+    xNNN.js     TNSX.onEnc("lc-xNNN",{"iv":b64,"ct":b64})   team-only rows without a public row (optional)
 
 Plaintexts are UTF-8 JSON padded with trailing spaces to a multiple of 4096 bytes;
 the check blob holds CHECK_TEXT so a browser can verify a password quickly.
@@ -220,8 +221,10 @@ def _plan(final: Path, password: str, plain: dict[str, tuple[str, bytes]], state
 
 
 def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, dict], n_shards: int,
-                secret_ids: set[str], rotate: bool = False, state_file: Path | None = None) -> tuple[int, dict]:
-    """Encrypt `catalog` and one blob per shard 0..n_shards-1 into data_dir/edp2/.
+                secret_ids: set[str], rotate: bool = False, state_file: Path | None = None,
+                xshards: dict[int, dict] | None = None) -> tuple[int, dict]:
+    """Encrypt `catalog`, one blob per shard 0..n_shards-1 and one per extra shard (xshards,
+    keys 0..n-1: rows that exist only in the encrypted catalogue) into data_dir/edp2/.
 
     Files are staged in a scratch directory under cache/, self-checked, then swapped in.
     On any failure the previous layer is put back unchanged (so the key is not lost and
@@ -235,6 +238,11 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
     plain = {"catalog.js": ("catalog", pad_json(catalog))}
     for sh in range(n_shards):
         plain[f"{sh:03d}.js"] = (f"lc-{sh:03d}", pad_json(shards.get(sh, {})))
+    xshards = xshards or {}
+    if sorted(xshards) != list(range(len(xshards))):
+        raise LayerError("extra shards must be numbered 0..n-1")
+    for k in range(len(xshards)):
+        plain[f"x{k:03d}.js"] = (f"lc-x{k:03d}", pad_json(xshards[k]))
     files, new_state, info = _plan(final, password, plain, _load_state(state_file), rotate)
     C.CACHE.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="edp2_layer_", dir=C.CACHE))
@@ -244,7 +252,7 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
         for fn, txt in files.items():
             (tmp / fn).write_text(txt)
             size += len(txt)
-        self_check(tmp, password, catalog, shards, n_shards, secret_ids)
+        self_check(tmp, password, catalog, shards, n_shards, secret_ids, xshards)
         if final.exists():
             backup = Path(tempfile.mkdtemp(prefix="edp2_layer_prev_", dir=C.CACHE)) / "edp2"
             shutil.move(str(final), str(backup))
@@ -272,11 +280,13 @@ def write_layer(data_dir: Path, password: str, catalog: dict, shards: dict[int, 
 
 
 def self_check(d: Path, password: str, catalog: dict, shards: dict[int, dict], n_shards: int,
-               secret_ids: set[str]) -> None:
+               secret_ids: set[str], xshards: dict[int, dict] | None = None) -> None:
     """Decrypt every file with the password and compare to the source; a wrong password
     and a swapped blob name must fail; the files must hold nothing but ciphertext."""
     names = sorted(p.name for p in d.iterdir())
-    want = sorted(["keyinfo.js", "catalog.js"] + [f"{sh:03d}.js" for sh in range(n_shards)])
+    xshards = xshards or {}
+    want = sorted(["keyinfo.js", "catalog.js"] + [f"{sh:03d}.js" for sh in range(n_shards)]
+                  + [f"x{k:03d}.js" for k in range(len(xshards))])
     if names != want:
         raise LayerError(f"self-check: unexpected file set in the layer ({len(names)} files, want {len(want)})")
     try:
@@ -299,6 +309,11 @@ def self_check(d: Path, password: str, catalog: dict, shards: dict[int, dict], n
             name = f"lc-{sh:03d}"
             got = json.loads(unseal(key, name, *blobs[name]).decode("utf-8"))
             if got != _roundtrip(shards.get(sh, {})):
+                raise LayerError(f"self-check: decrypted {name} differs from the source")
+        for k in range(len(xshards)):
+            name = f"lc-x{k:03d}"
+            got = json.loads(unseal(key, name, *blobs[name]).decode("utf-8"))
+            if got != _roundtrip(xshards[k]):
                 raise LayerError(f"self-check: decrypted {name} differs from the source")
     except InvalidTag:
         raise LayerError("self-check: a blob did not decrypt with the build password") from None

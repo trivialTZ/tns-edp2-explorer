@@ -26,6 +26,8 @@ Usage:
   python build/fetch_edp2_stamps.py --scope coadd     every object inside the coadd footprint
   python build/fetch_edp2_stamps.py --limit 20
   python build/fetch_edp2_stamps.py --fix-clipped     refetch clipped cutouts saved without cx, cy
+  python build/fetch_edp2_stamps.py --scope salt      DP2 SALT-pass candidates not in the catalogue
+                                                      (PRIVATE/dp2_salt, strict tier first; name = diaObjectId)
 """
 from __future__ import annotations
 
@@ -198,7 +200,26 @@ def needs_fix(path: Path) -> bool:
         return True
 
 
+def salt_targets() -> pd.DataFrame:
+    """DP2-only SALT candidates (build/dp2_salt.py inputs) with their coadd patch, strict tier first."""
+    import fetch_edp2_coadd as FC  # noqa: PLC0415
+    c = pd.read_parquet(C.PRIVATE / "dp2_salt/cands.parquet")
+    o = pd.read_parquet(C.PRIVATE / "dp2_salt/overlap.parquet")
+    c = c[~c["diaObjectId"].isin(o.loc[o["site_name"].notna(), "diaObjectId"])]
+    c = c.assign(_t=c["tier_site"].map({"strict": 0, "good": 1, "broad": 2})).sort_values(["_t", "diaObjectId"])
+    p = pd.read_parquet(FC.PATCHES)
+    hits = FC.contains(p, c["ra"].to_numpy(float), c["dec"].to_numpy(float))
+    patch = [f"{int(p['lsst_tract'].iat[h[0]])}.{int(p['lsst_patch'].iat[h[0]])}" if h else None for h in hits]
+    return pd.DataFrame({"name": c["diaObjectId"].to_numpy(), "ra": c["ra"].to_numpy(), "dec": c["dec"].to_numpy(),
+                         "edp2_coadd_patch": patch}).dropna(subset=["edp2_coadd_patch"])
+
+
 def jobs_for(scope: str, limit: int | None, token: str, tap_sync, fix: bool = False) -> list[tuple]:
+    if scope == "salt":
+        df = salt_targets()
+        if limit:
+            df = df.head(limit)
+        return _jobs(df, scope, token, tap_sync, fix)
     cov = pd.read_parquet(COADD)
     t = C.load_targets()[["name", "ra", "dec", "edp2_matched"]]
     df = t.merge(cov, on="name")
@@ -212,6 +233,10 @@ def jobs_for(scope: str, limit: int | None, token: str, tap_sync, fix: bool = Fa
     df = df.sort_values(["_m", "_typed", "name"])
     if limit:
         df = df.head(limit)
+    return _jobs(df, scope, token, tap_sync, fix)
+
+
+def _jobs(df: pd.DataFrame, scope: str, token: str, tap_sync, fix: bool) -> list[tuple]:
     tp = df["edp2_coadd_patch"].str.split(".", expand=True).astype(int)
     df = df.assign(lsst_tract=tp[0].to_numpy(), lsst_patch=tp[1].to_numpy())
     dids = fetch_dids(df[["lsst_tract", "lsst_patch"]].drop_duplicates(), token, tap_sync)
@@ -229,7 +254,7 @@ def jobs_for(scope: str, limit: int | None, token: str, tap_sync, fix: bool = Fa
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--scope", choices=["matched", "coadd"], default="matched")
+    ap.add_argument("--scope", choices=["matched", "coadd", "salt"], default="matched")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--fix-clipped", action="store_true", help="refetch clipped cutouts saved without a target position")
     a = ap.parse_args()

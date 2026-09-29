@@ -124,6 +124,24 @@ class CheckPublic(unittest.TestCase):
         (self.enc / "002.js").write_text(enc_blob("lc-002"))
         self.assertFails()
 
+    # ---- team-only rows (DP2 SALT candidates): data/edp2/xNNN.js
+    def test_contiguous_team_only_shards_pass(self):
+        for k in (0, 1):
+            (self.enc / f"x{k:03d}.js").write_text(enc_blob(f"lc-x{k:03d}"))
+        self.assertEqual(self.run_check(), 0)
+
+    def test_team_only_shard_gap_fails(self):
+        (self.enc / "x001.js").write_text(enc_blob("lc-x001"))
+        self.assertFails()
+
+    def test_team_only_shard_name_must_match(self):
+        (self.enc / "x000.js").write_text(enc_blob("lc-000"))
+        self.assertFails()
+
+    def test_plaintext_team_only_shard_fails(self):
+        (self.enc / "x000.js").write_text(f"TNSX.onShard(10000,{json.dumps(PLAIN_LC)});\n")
+        self.assertFails()
+
     def test_missing_keyinfo_fails(self):
         (self.enc / "keyinfo.js").unlink()
         self.assertFails()

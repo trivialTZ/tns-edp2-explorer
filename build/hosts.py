@@ -221,8 +221,8 @@ def _webp(png: Path, px: int, quality: int, cache: Path) -> bytes:
     return b.getvalue()
 
 
-def png_of(name: str) -> Path | None:
-    p = C.HOSTS_DIR / "img" / f"{name}.png"
+def png_of(name: str, root: Path | None = None) -> Path | None:
+    p = (root or C.HOSTS_DIR) / "img" / f"{name}.png"
     return p if p.is_file() else None
 
 
@@ -247,9 +247,10 @@ def write_images(names, dest: Path, cache: Path, size=PUBLIC_IMG) -> set[str]:
     return done
 
 
-def data_uri(name: str, cache: Path, size=SHARD_IMG) -> str | None:
+def data_uri(name: str, cache: Path, size=SHARD_IMG, root: Path | None = None) -> str | None:
+    """root: another host run's site directory (the DP2 SALT run, build/dp2_salt.py)."""
     import base64
-    png = png_of(name)
+    png = png_of(name, root)
     if png is None:
         return None
     return "data:image/webp;base64," + base64.b64encode(_webp(png, *size, cache)).decode("ascii")

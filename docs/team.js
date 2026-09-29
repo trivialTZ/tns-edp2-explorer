@@ -9,12 +9,15 @@
  * old keys. It all fails closed: on any error the key is forgotten and the site stays (or
  * becomes) public, with a short notice.
  *
+ * The payload may add rows of its own ("extra": the DP2 SALT candidates with no TNS object here, build/dp2_salt.py);
+ * their lightcurves are in data/edp2/xNNN.js (catalogue shard K.XSHARD_BASE + NNN).
+ *
  * X.team: ready (Promise of the decrypted catalogue payload, or null), apply(catalog, payload),
  * shard(n), mergeShard(pub, enc), initUi(), openDialog(), unlocked.
  */
 (function () {
   'use strict';
-  var X = window.TNSXApp, S = X.S, U = X.U;
+  var X = window.TNSXApp, S = X.S, U = X.U, K = X.K;
   var T = X.team = { unlocked: false, ready: null };
   var DIR = 'data/edp2/', STORE = 'tnsx-team-key', NOTICE = 'tnsx-team-notice';
   var CHECK_TEXT = 'tnsx-edp2 key check v1', AAD_PREFIX = 'tnsx-edp2/v1/';   // build/crypto_layer.py
@@ -173,6 +176,9 @@
       });
       Object.keys(srcs).forEach(function (k) { if (!/^edp2_[a-z0-9_]+$/.test(k)) throw new Error('unexpected source ' + k); });
       if (p.hosts) X.checkHostTable(p.hosts);
+      var ex = p.extra;
+      if (ex && (!Array.isArray(ex.cols) || !Array.isArray(ex.rows) || ex.cols[0] !== 'name' ||
+          !ex.rows.every(function (r) { return Array.isArray(r) && r.length === ex.cols.length; }))) throw new Error('unexpected extra rows');
       var at = new Map();
       names.forEach(function (n, k) { at.set(String(n), k); });
       var jn = d.cols.indexOf('name'), nc = cols.length;
@@ -184,6 +190,21 @@
       });
       d.rows.forEach(function (r, i) { Array.prototype.push.apply(r, add[i]); });
       d.cols = d.cols.concat(cols);
+      if (ex) {                                        // rows that exist only with team access
+        var idx = ex.cols.map(function (c) {
+          var j = d.cols.indexOf(c);
+          if (j < 0) throw new Error('unexpected extra column ' + c);
+          return j;
+        });
+        var js = ex.cols.indexOf('shard'), names0 = new Set(d.rows.map(function (r) { return String(r[jn]); })), width = d.cols.length;
+        ex.rows.forEach(function (r) {
+          if (js < 0 || !(r[js] >= K.XSHARD_BASE) || names0.has(String(r[0]))) throw new Error('unexpected extra row');
+          var row = new Array(width).fill(null);
+          d.cols.forEach(function (c, j) { if (/^n_/.test(c)) row[j] = 0; });
+          idx.forEach(function (j, k) { row[j] = r[k]; });
+          d.rows.push(row);
+        });
+      }
       var merged = {};
       Object.keys(srcs).forEach(function (k) { merged[k] = srcs[k]; });            // EDP2 first, as in the private build
       Object.keys(d.meta.sources || {}).forEach(function (k) { if (!merged[k]) merged[k] = d.meta.sources[k]; });
@@ -196,6 +217,7 @@
       d.meta.mode = 'private';
       d.meta.team = true;
       if (Array.isArray(p.notes)) d.meta.notes = p.notes;
+      if (p.salt && typeof p.salt === 'object') d.meta.salt = p.salt;
       if (U.isNum(p.match_radius_arcsec)) d.meta.match_radius_arcsec = p.match_radius_arcsec;
       T.unlocked = true;
       return true;
@@ -208,8 +230,8 @@
 
   // Decrypted EDP2 lightcurves for shard n: {name: {edp2_dia: LC, edp2_fp: LC}}.
   T.shard = function (n) {
-    var name = 'lc-' + U.pad3(n);
-    return loadBlob(name, U.pad3(n) + '.js' + tag).then(function (b) { return decryptJson(key, name, b); }).then(function (e) {
+    var stem = n >= K.XSHARD_BASE ? 'x' + U.pad3(n - K.XSHARD_BASE) : U.pad3(n), name = 'lc-' + stem;
+    return loadBlob(name, stem + '.js' + tag).then(function (b) { return decryptJson(key, name, b); }).then(function (e) {
       if (!e || typeof e !== 'object' || Array.isArray(e)) throw new Error('unexpected ' + name + ' payload');
       Object.keys(e).forEach(function (o) {
         var s = e[o];
@@ -221,6 +243,10 @@
           return;
         }
         Object.keys(s).forEach(function (k) {
+          if (k === 'edp2_salt') {                       // SALT3 model {t0, dt, m: {band: [nJy]}, bl: {band: nJy}}
+            if (!s[k] || !U.isNum(s[k].t0) || !U.isNum(s[k].dt) || !s[k].m || typeof s[k].m !== 'object') throw new Error('unexpected ' + name + ' SALT model');
+            return;
+          }
           if (!/^edp2_[a-z0-9_]+$/.test(k) || !s[k] || !Array.isArray(s[k].t)) throw new Error('unexpected ' + name + ' payload');
         });
       });

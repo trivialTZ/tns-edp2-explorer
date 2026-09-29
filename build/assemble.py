@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 import common as C
+import dp2_salt as D
 import hosts as H
 import stamps as ST
 
@@ -297,6 +298,13 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
         sys.exit("refusing --encrypt-edp2: edp2.parquet holds non-EDP2 sources")
     sources = [s for s in C.PRIVATE_SOURCES if s in set(ph["source"])]
     add_source_columns(e, ph, sources)
+    salt = D.load() if D.available() else None       # team-only list: DP2 SALT-pass candidates
+    if salt is not None:
+        t = D.tns_columns(salt, e["name"])
+        for c in D.SALT_COLS:
+            e[c] = t[c].to_numpy()
+        for c in ("n_edp2_night", "t0_edp2_night", "t1_edp2_night"):
+            e[c] = 0 if c.startswith("n_") else None
     cols = [c for c in e.columns if c != "name"]
     payload = {                    # no timestamp: unchanged data must give an unchanged plaintext
         "v": 1,
@@ -308,6 +316,8 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
         "match_radius_arcsec": C.MATCH_RADIUS_AS,
     }
     ids = set(pd.read_parquet(EDP2_OBJECTS, columns=["diaObjectId"])["diaObjectId"].dropna().astype(str))
+    if salt is not None:
+        ids |= set(salt["c"]["diaObjectId"])
     matched = int(e["edp2_id"].notna().sum())
     print(f"[edp2] {matched:,} objects with a DiaObject, {len(ph):,} points, "
           f"{len(sources)} sources (encrypting; nothing is written in plaintext)")
@@ -329,7 +339,116 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
             shards[int(shard_of[n])].setdefault(H.SHARD_IMG_KEY, {})[n] = u
         print(f"[edp2] hosts: {len(priv)} encrypted-only rows, {len(uris)} embedded figures"
               + (f", plus the withheld fits of {len(pub)} public rows" if withheld else ""))
-    return payload, shards, ids
+    have = set(host_split[0]["name"]) | set(host_split[1]["name"]) if host_split is not None else set()
+    xshards = salt_layer(salt, cat, payload, shards, have) if salt is not None else {}
+    return payload, shards, ids, xshards
+
+
+XCOLS = ["name", "prefix", "ra", "dec", "disc_mjd", "region", "shard", "edp2_id", "edp2_stamp",
+         "n_edp2_night", "t0_edp2_night", "t1_edp2_night", *D.SALT_COLS]      # columns of the DP2-only rows
+
+
+def salt_parts(salt: dict, cat: pd.DataFrame, have: set[str]) -> dict:
+    """DP2 SALT candidates (build/dp2_salt.py), shared by the encrypted layer and the private build:
+    xf (DP2-only rows, XCOLS), dp2 {name: (stamp webp, bands)}, tns_sh {catalogue shard: {name: {edp2_salt}}},
+    xsh {extra shard k: {id: {edp2_night, edp2_salt}}}, dh (DP2 host-run rows not already shown; `have`)."""
+    xf = D.extra_frame(salt)
+    xf["region"] = survey_region(xf)
+    lc = pd.read_parquet(D.SALT_DIR / "lc.parquet", columns=["diaObjectId", "mjd"]).groupby("diaObjectId")["mjd"]
+    xf["n_edp2_night"] = xf["name"].map(lc.size()).fillna(0).astype(int)
+    xf["t0_edp2_night"], xf["t1_edp2_night"] = xf["name"].map(lc.min()), xf["name"].map(lc.max())
+    dp2 = ST.dp2_images(xf["name"])
+    xf["edp2_stamp"] = xf["name"].map({n: bands for n, (_, bands) in dp2.items()})
+    tns_sh, xsh = D.shard_data(salt, xf, cat.set_index("name")["shard"])
+    return {"xf": xf, "dp2": dp2, "tns_sh": tns_sh, "xsh": xsh, "dh": D.hosts(salt, have),
+            "source": {**{k: D.SOURCE["edp2_night"][k] for k in ("label", "desc", "survey")},
+                       "n_objects": int((xf["n_edp2_night"] > 0).sum()), "n_points": int(xf["n_edp2_night"].sum())}}
+
+
+def _merge_hosts(t: dict, into: dict | None) -> dict:
+    if into is None:
+        return t
+    if into["cols"] != t["cols"]:
+        raise SystemExit("refusing: DP2 host table columns differ from the TNS host table")
+    into["rows"] += t["rows"]
+    return into
+
+
+def salt_layer(salt: dict, cat: pd.DataFrame, payload: dict, shards: dict[int, dict], have: set[str]) -> dict[int, dict]:
+    """Encrypted layer: model curves on the TNS rows the candidates match, rows of their own ("extra",
+    extra shards x000.js ...) for the rest, stamps and host figures as data URIs, their hosts in
+    payload["hosts"]. Returns the extra shards."""
+    P = salt_parts(salt, cat, have)
+    xf, xsh = P["xf"], P["xsh"]
+    for sh, objs in P["tns_sh"].items():
+        for n, o in objs.items():
+            shards[sh].setdefault(n, {}).update(o)
+    xshard = xf.set_index("name")["shard"]
+    for n, (b, _) in P["dp2"].items():
+        xsh[int(xshard[n]) - D.XSHARD_BASE].setdefault(ST.SHARD_KEY, {})[n] = ST.data_uri(b)
+    payload["extra"] = {"cols": XCOLS, "rows": table_rows(xf, XCOLS)}
+    payload["sources"] = {**payload["sources"], "edp2_night": P["source"]}
+    dh, n_h = P["dh"], 0
+    if dh is not None and len(dh):
+        where = {**cat.set_index("name")["shard"].to_dict(), **xshard.to_dict()}
+        img = {}
+        for r in dh.itertuples():
+            u = H.data_uri(r.src_name, C.PRIVATE_CACHE / "hosts_webp", root=D.HOSTS_DP2)
+            if u:
+                sh = int(where[r.name])
+                box = xsh[sh - D.XSHARD_BASE] if sh >= D.XSHARD_BASE else shards[sh]
+                box.setdefault(H.SHARD_IMG_KEY, {})[r.name] = u
+                img[r.name] = "shard"
+        payload["hosts"] = _merge_hosts(H.table(dh, img), payload.get("hosts"))
+        n_h = len(dh)
+    payload["salt"] = D.meta(salt, xf, n_h)
+    print(f"[edp2] DP2 SALT list: {payload['salt']['n']} candidates ({payload['salt']['tiers']}); "
+          f"{payload['salt']['in_catalogue']} on TNS rows, {len(xf)} rows of their own in {len(xsh)} extra shards; "
+          f"{len(P['dp2'])} DP2 stamps, {n_h} host rows")
+    return xsh
+
+
+def salt_private(salt: dict, cat: pd.DataFrame, cols: list[str], catalog: dict, meta: dict, data: Path,
+                 have: set[str]) -> dict[int, dict]:
+    """Private build: the same list as plain files. Adds the SALT columns and the DP2-only rows to
+    `catalog`, stamps to data/dp2stamps/, host figures to data/hosts/, and returns
+    ({catalogue shard: {name: {edp2_salt}}}, {extra shard k: ...}) for the lightcurve writer."""
+    P = salt_parts(salt, cat, have)
+    xf = P["xf"]
+    t = D.tns_columns(salt, cat["name"])
+    for c in D.SALT_COLS:
+        cat[c] = t[c].to_numpy()
+    for c in ("n_edp2_night", "t0_edp2_night", "t1_edp2_night"):
+        cat[c] = 0 if c.startswith("n_") else None
+    new = [c for c in D.SALT_COLS + ["n_edp2_night", "t0_edp2_night", "t1_edp2_night"] if c not in cols]
+    cols += new
+    x = xf.reindex(columns=cols)
+    for c in cols:
+        if c.startswith("n_") and c not in XCOLS:
+            x[c] = 0
+    catalog["cols"] = cols
+    catalog["rows"] = table_rows(cat, cols) + table_rows(x, cols)
+    d2 = data / "dp2stamps"
+    d2.mkdir(parents=True, exist_ok=True)
+    for n, (b, _) in P["dp2"].items():
+        (d2 / f"{n}.webp").write_bytes(b)
+    dh, n_h = P["dh"], 0
+    if dh is not None and len(dh):
+        hd = data / "hosts"
+        hd.mkdir(parents=True, exist_ok=True)
+        img = {}
+        for r in dh.itertuples():
+            png = H.png_of(r.src_name, D.HOSTS_DP2)
+            if png is not None:
+                (hd / f"{r.name}.webp").write_bytes(H._webp(png, *H.PUBLIC_IMG, C.PRIVATE_CACHE / "hosts_webp"))
+                img[r.name] = "file"
+        catalog["hosts"] = _merge_hosts(H.table(dh, img), catalog.get("hosts"))
+        n_h = len(dh)
+    meta["sources"]["edp2_night"] = P["source"]
+    meta["salt"] = D.meta(salt, xf, n_h)
+    meta["stamps"]["dp2"] = meta["stamps"].get("dp2", 0) + len(P["dp2"])
+    print(f"[private] DP2 SALT list: {len(xf)} DP2-only rows, {len(P['xsh'])} extra shards, {len(P['dp2'])} stamps, {n_h} host rows")
+    return P["tns_sh"], P["xsh"]
 
 
 def spectra_shards(cat: pd.DataFrame) -> dict[int, dict]:
@@ -688,6 +807,10 @@ def main():
         catalog["rows"] = table_rows(cat, cols)
     dl = write_downloads(data, cat, ph, meta, sources,
                          {"classifiers.csv.gz": (clf_dl, CLF_DL_DESC)} if clf_dl is not None else None)
+    salt_sh, salt_x = {}, {}
+    if a.mode == "private" and D.available():     # team-only DP2 SALT list, plain files in the private build
+        salt_sh, salt_x = salt_private(D.load(), cat, cols, catalog, meta, data,
+                                       set(hosts["name"]) if hosts is not None else set())
     size = write_js(data / "catalog.js", "TNSX.onCatalog(", catalog)
 
     v = pd.read_csv(C.VISITS_CSV, usecols=["expMidptMJD", "band", "ra", "dec"])
@@ -696,8 +819,13 @@ def main():
     size += write_js(data / "visits.js", "TNSX.onVisits(", {"cols": ["mjd", "band", "ra", "dec"], "rows": vrows})
 
     shards = shard_payloads(ph, cat)
+    for sh, objs in salt_sh.items():
+        for n, o in objs.items():
+            shards[sh].setdefault(n, {}).update(o)
     for sh, objs in shards.items():
         size += write_js(data / "lc" / f"{sh:03d}.js", f"TNSX.onShard({sh},", objs)
+    for k, objs in salt_x.items():                 # DP2-only rows (private build only; see docs/app.js loadShard)
+        size += write_js(data / "lc" / f"x{k:03d}.js", f"TNSX.onShard({D.XSHARD_BASE + k},", objs)
     n_lc = len(shards)
     if (data / "clf").exists():
         shutil.rmtree(data / "clf")
@@ -729,13 +857,13 @@ def main():
             shutil.rmtree(enc_dir)
             print(f"[public] removed {enc_dir} (no --encrypt-edp2)")
         return
-    plain, enc_shards, ids = edp2_layer(cat, host_split)
+    plain, enc_shards, ids, xshards = edp2_layer(cat, host_split)
     try:
-        n, info = CL.write_layer(data, password, plain, enc_shards, n_lc, ids, rotate=a.rotate)
+        n, info = CL.write_layer(data, password, plain, enc_shards, n_lc, ids, rotate=a.rotate, xshards=xshards)
     except CL.LayerError as e:
         sys.exit(f"refusing: encrypted EDP2 layer not written: {e}")
     key = "key kept (same salt)" if info["key"].startswith("kept") else f"NEW key and salt ({info['reason']})"
-    print(f"[public] wrote {enc_dir}: {n_lc + 2} files, {n / 1e6:.1f} MB ciphertext; {key}; "
+    print(f"[public] wrote {enc_dir}: {n_lc + len(xshards) + 2} files, {n / 1e6:.1f} MB ciphertext; {key}; "
           f"{info['reused']} unchanged, {info['sealed']} re-encrypted with fresh IVs")
     print("[public] self-check passed: decrypts to the source, wrong password fails, no plaintext "
           "leaks, and a no-change rebuild leaves data/edp2/ byte-identical")
