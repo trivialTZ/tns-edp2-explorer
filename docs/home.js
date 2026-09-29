@@ -73,15 +73,25 @@
     var m = S.meta.salt;
     if (!m || !m.nested) return '';
     var link = function (t) { return '#/explore?salt=' + t; };   // tiers are nested in the filter: salt=good is strict + good
+    // per nested tier: how many of its candidates are already TNS objects on this site, and how many are DP2-only
+    var split = { strict: [0, 0], good: [0, 0], broad: [0, 0] };
+    for (var r = 0; r < S.N; r++) {
+      var tr = X.saltTier(r); if (!tr) continue;
+      var k = X.isDp2Only(r) ? 1 : 0;
+      for (var q = K.SALT_TIERS.indexOf(tr); q < K.SALT_TIERS.length; q++) split[K.SALT_TIERS[q]][k]++;
+    }
     var card = function (t, sub) {
-      return '<a class="card src-card" href="' + link(t) + '"><div class="top"><b>' + esc(K.SALT_LABEL[t]) + '</b><span class="pill private">team only</span></div>' +
-        '<div class="stat" style="padding:0"><div class="v">' + U.fint(m.nested[t]) + '</div></div><p class="muted" style="margin:0">' + esc(sub) + '</p></a>';
+      var a = split[t], tot = (a[0] + a[1]) || 1;
+      return '<a class="card src-card salt-tier" href="' + link(t) + '"><div class="top"><b>' + esc(K.SALT_LABEL[t]) + '</b><span class="pill private">team only</span></div>' +
+        '<div class="stat" style="padding:0"><div class="v">' + U.fint(m.nested[t]) + '</div></div><p class="muted" style="margin:0">' + esc(sub) + '</p>' +
+        '<div class="salt-bar" role="img" aria-label="' + a[0] + ' in the TNS list, ' + a[1] + ' DP2 only"><i style="width:' + (100 * a[0] / tot).toFixed(1) + '%"></i></div>' +
+        '<div class="salt-split"><span><b>' + U.fint(a[0]) + '</b> in the TNS list</span><span><b>' + U.fint(a[1]) + '</b> DP2 only</span></div></a>';
     };
     return '<section class="section" aria-labelledby="h-salt"><div class="section-head"><h2 id="h-salt">DP2 SALT candidates</h2>' +
       '<p>Supernova candidates from a SALT3 fit of every object in the whole-DP2 search. The tiers are nested and measure fit quality, not type: a candidate is not a confirmed SN Ia. ' +
       U.fint(m.in_catalogue) + ' are TNS objects already on this site, where they carry the fit; the other ' + U.fint(m.dp2_only) + ' appear as DP2 pages of their own' +
       (m.tns_outside ? ' (' + U.fint(m.tns_outside) + ' of them lie within 2″ of a TNS object outside this catalogue)' : '') + '.</p></div>' +
-      '<div class="src-grid">' + card('strict', 'the tightest cut (the search’s tier_cosmo)') + card('good', 'includes strict; tighter peak time and early and late coverage') +
+      '<div class="src-grid salt-grid">' + card('strict', 'the tightest cut (the search’s tier_cosmo)') + card('good', 'includes strict; tighter peak time and early and late coverage') +
       card('broad', 'every fit passing the complete quality rule') + '</div></section>';
   }
   function stat(v, k, d) {

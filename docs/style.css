@@ -806,3 +806,12 @@ details.colref td.mono { white-space: nowrap; font-size: 12.5px; }
   .clf-grid th.lab { min-width: 118px; max-width: 130px; white-space: normal; }
 }
 .salt-card { margin-top: 40px; padding: 24px; }   /* DP2 SALT fit (team only) */
+
+/* home: DP2 SALT tier cards fill the row and show the TNS / DP2-only split */
+.salt-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 860px) { .salt-grid { grid-template-columns: 1fr; } }
+.salt-tier p { flex: 0 0 auto; }
+.salt-bar { height: 6px; border-radius: 3px; background: var(--line-strong); overflow: hidden; margin-top: auto; }
+.salt-bar i { display: block; height: 100%; background: var(--dot-data); border-radius: 3px 0 0 3px; }
+.salt-split { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.salt-split b { color: var(--ink); font-weight: 600; }
