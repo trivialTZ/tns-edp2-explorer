@@ -39,12 +39,13 @@
     }
     cur = i; S.lastObj = i; O = null;
     document.title = U.fullName(i) + ' · TNS EDP2 Explorer';
-    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) + saltCardHtml(i) + hostCardHtml(i) +
+    root.innerHTML = '<div class="wrap">' + topHtml(i) + heroHtml(i) + saltCardHtml(i) +
       '<section class="card lc-card" aria-labelledby="lc-h"><div class="lc-head"><h2 id="lc-h">Lightcurve</h2><div class="lc-ctl" id="lc-ctl"></div></div>' +
       '<div id="lc-legend"></div>' +
       '<div class="lc-plot" id="lc-plot"><div class="lc-msg"><div><span class="sk" style="display:block;width:260px;height:10px;margin:0 auto 10px"></span>Loading lightcurve…</div></div></div>' +
       '<div class="lc-foot" id="lc-foot"></div>' +
       '<details class="pts" id="pts"><summary>' + U.icon('chev', 2) + 'Photometry table <span class="muted">· points shown in the plot</span></summary><div id="pts-table"></div></details></section>' +
+      hostCardHtml(i) +
       imgCardHtml(i) + clfCardHtml(i) + specCardHtml(i) +
       '<p class="sr-only" id="obj-live" aria-live="polite"></p></div>';
     wire(root);
