@@ -815,3 +815,9 @@ details.colref td.mono { white-space: nowrap; font-size: 12.5px; }
 .salt-bar i { display: block; height: 100%; background: var(--dot-data); border-radius: 3px 0 0 3px; }
 .salt-split { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .salt-split b { color: var(--ink); font-weight: 600; }
+
+/* Explore: link uses team-only (Rubin DP2) filters and the visitor has not unlocked team access */
+.team-need { display: flex; gap: 12px; align-items: flex-start; margin: 4px 0 14px; padding: 12px 16px; border: 1px solid var(--private); border-radius: var(--r-lg);
+  background: var(--card); font-size: var(--t-sm); line-height: 1.5; }
+.team-need .ico { color: var(--private); flex: none; margin-top: 2px; }
+.team-need .btn { margin-left: 6px; }

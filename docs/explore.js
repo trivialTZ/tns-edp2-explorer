@@ -198,6 +198,7 @@
       '<div class="popover" id="cols-pop" role="group" aria-label="Visible columns" hidden style="right:0;top:calc(100% + 8px)"></div></span>' +
       '<button type="button" class="btn" id="rand-btn" title="Open a random transient from these results">' + U.icon('shuffle', 1.8) + 'Random</button>' +
       '<button type="button" class="btn" id="csv-btn" title="Download all filtered rows as CSV">' + U.icon('download', 1.9) + 'CSV</button></div></div>' +
+      '<div id="team-need"></div>' +
       '<div class="chips" id="chips" aria-label="Active filters"></div>' +
       '<div class="card table-card"><div class="table-wrap" id="twrap"><table class="data clickable" id="rtable"><thead></thead><tbody></tbody></table></div>' +
       '<div class="pager" id="pager"></div></div>' +
@@ -659,6 +660,25 @@
 
   // ------------------------------------------------------------------ view API
   X.results = function () { return F && F.last ? F.last.result : []; };
+  // Links that use Rubin DP2 filters (SALT tier, DP2 rows, EDP2 sources) mean nothing to a visitor without team access
+  var TEAM_FILTERS = { salt: 'DP2 SALT tier', smp: 'Catalogue', sz: 'SALT redshift', sx1: 'SALT x1', sc: 'SALT colour', em: 'DP2 diaObjectId match',
+    ecov: 'EDP2 deep coadd', etc: 'EDP2 time-consistent', esep: 'EDP2 separation', endia: 'EDP2 nDia', elead: 'EDP2 lead time' };
+  function teamNotice(arg) {
+    var box = $('#team-need'); if (!box) return;
+    var need = [];
+    if (X.teamOffer()) {
+      var p = new URLSearchParams(arg || '');
+      Object.keys(TEAM_FILTERS).forEach(function (k) { if (p.has(k)) need.push(TEAM_FILTERS[k]); });
+      if (p.getAll('pre').indexOf('DP2') >= 0) need.push('Name prefix DP2');
+      if (p.getAll('src').some(function (v) { return S.srcKeys.indexOf(v) < 0; })) need.push('EDP2 data sources');
+    }
+    if (!need.length) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="team-need" role="status"><span class="ico">' + U.icon('lock', 2) + '</span><div><b>This link needs team access.</b> ' +
+      'It filters on Rubin DP2 data (' + esc(need.join(', ')) + '), which is proprietary and only available to Rubin data-rights holders. ' +
+      'Those filters are ignored below, so the results are not the ones the link describes. ' +
+      '<button type="button" class="btn btn-sm" id="team-need-btn">Unlock team access</button></div></div>';
+    $('#team-need-btn').addEventListener('click', function () { if (X.team && X.team.openDialog) X.team.openDialog(); });
+  }
   X.views.explore = {
     init: function () {
       build();
@@ -667,9 +687,11 @@
       S.listQuery = q0;
       F.evaluate();
       render();
+      teamNotice(location.hash.indexOf('?') >= 0 ? location.hash.slice(location.hash.indexOf('?') + 1) : q0);
     },
     show: function (arg, prev) {
       document.title = 'Explore · TNS EDP2 Explorer';
+      teamNotice(arg);
       if (arg !== S.listQuery) {
         F.state = F.fromParams(new URLSearchParams(arg));
         S.listQuery = arg;

@@ -604,6 +604,8 @@
   // ------------------------------------------------------------------ router
   X.go = function (hash) { if (location.hash === hash) route(); else location.hash = hash; };
   X.replace = function (hash) { if (location.hash !== hash) location.replace(hash); };
+  // A public visitor who has not unlocked team access, on a build that ships the encrypted layer.
+  X.teamOffer = function () { return S.meta.mode === 'public' && !!S.meta.team_access && !(X.team && X.team.unlocked); };
   X.exploreHash = function () { return '#/explore' + (S.listQuery ? '?' + S.listQuery : ''); };
   function route() {
     U.hover.hide();

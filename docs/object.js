@@ -31,10 +31,17 @@
     U.hover.hide();
     if (i === undefined) {
       cur = null; O = null;
-      document.title = 'Not found · TNS EDP2 Explorer';
-      root.innerHTML = '<div class="wrap"><div class="prose" style="margin:0"><p class="eyebrow">Not in this catalogue</p><h1 tabindex="-1">No transient named “' + esc(name) + '”</h1>' +
+      var rid = /^\d{15,20}$/.test(String(name).trim()), gated = X.teamOffer();
+      document.title = (gated && rid ? 'Team access · ' : 'Not found · ') + 'TNS EDP2 Explorer';
+      root.innerHTML = '<div class="wrap"><div class="prose" style="margin:0"><p class="eyebrow">' + (gated && rid ? 'Team access' : 'Not in this catalogue') + '</p>' +
+        '<h1 tabindex="-1">No transient named “' + esc(name) + '”</h1>' +
+        (gated ? '<p>' + (rid ? 'This looks like a Rubin DP2 diaObjectId. ' : '') + 'Either this name is not in the public catalogue, or it is a Rubin DP2 candidate ' +
+          'that only people with team access can see (DP2 data is proprietary, for Rubin data-rights holders).</p>' +
+          '<p><button type="button" class="btn btn-primary" id="team-need-btn">Unlock team access</button></p>' : '') +
         '<p>This site covers ' + U.fint(S.N) + ' TNS transients inside the Rubin EDP2 footprint. <a href="https://www.wis-tns.org/object/' + encodeURIComponent(U.normQuery(name)) +
         '" target="_blank" rel="noopener">Look it up on TNS</a> or <a href="' + esc(X.exploreHash()) + '">go back to Explore</a>.</p></div></div>';
+      var tb = document.getElementById('team-need-btn');
+      if (tb) tb.addEventListener('click', function () { if (X.team && X.team.openDialog) X.team.openDialog(); });
       return;
     }
     cur = i; S.lastObj = i; O = null;
