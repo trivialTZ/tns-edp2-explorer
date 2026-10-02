@@ -266,8 +266,11 @@
     var d = [], team = S.isPrivate, offer = !S.isPrivate && !!S.meta.team_access;
     var ek = S.srcKeys.filter(function (k) { return /^edp2_/.test(k); });
     if (U.has('alert_ids')) d.push({ id: 'rid', label: 'Rubin alert diaObjectId', test: function (i) { return X.hasRid(i, 'alert'); }, p: [['rid', 'yes']] });
-    if (team && U.has('edp2_coadd')) d.push({ id: 'coadd', label: 'EDP2 coadd footprint', priv: true, test: function (i) { return U.V(i, 'edp2_coadd') === true; }, p: [['ecov', '1']] });
-    else if (offer) d.push({ id: 'coadd', label: 'EDP2 coadd footprint', locked: true });
+    // A per-object flag, not an outline: the map never draws the dp2.CoaddPatches polygons
+    var coaddTip = 'TNS transients whose position lies inside a DP2 deep-coadd patch (dp2.CoaddPatches). ' +
+      'The map shows these transients, not the patch outlines, so patches with no TNS transient stay empty. DP2-only candidates carry no coadd flag.';
+    if (team && U.has('edp2_coadd')) d.push({ id: 'coadd', label: 'Inside EDP2 deep coadd', tip: coaddTip, priv: true, test: function (i) { return U.V(i, 'edp2_coadd') === true; }, p: [['ecov', '1']] });
+    else if (offer) d.push({ id: 'coadd', label: 'Inside EDP2 deep coadd', locked: true });
     if (team && U.has('edp2_id')) d.push({ id: 'dp2', label: 'DP2 diaObjectId', priv: true, test: X.F.isMatched, p: [['em', '1']] });
     else if (offer) d.push({ id: 'dp2', label: 'DP2 diaObjectId', locked: true });
     if (team && ek.length) {
@@ -330,7 +333,7 @@
     }
     h += '<span class="tchips" role="group" aria-label="Only transients with">' + skyDefs().map(function (d) {
       if (d.locked) return '<button type="button" class="tchip locked" data-sky-lock title="Unlock team access to filter by Rubin DP2 data">' + U.icon('lock', 2) + esc(d.label) + '</button>';
-      return '<button type="button" class="tchip' + (d.priv ? ' priv' : '') + '" data-sky="' + d.id + '" aria-pressed="' + (H.sky.on[d.id] ? 'true' : 'false') + '">' +
+      return '<button type="button" class="tchip' + (d.priv ? ' priv' : '') + '" data-sky="' + d.id + '"' + (d.tip ? ' title="' + esc(d.tip) + '"' : '') + ' aria-pressed="' + (H.sky.on[d.id] ? 'true' : 'false') + '">' +
         esc(d.label) + '<span class="n"></span></button>';
     }).join('') + '</span>';
     $('#sky-tools').innerHTML = h;
@@ -366,7 +369,8 @@
       legend = '<span class="li"><span class="dot" style="background:var(--dot-data)"></span>Selected · ' + U.fint(ev.sel.length) + '</span>' +
         '<span class="li"><span class="dot" style="background:var(--dot-none)"></span>Other transients · ' + U.fint(ev.other.length) + '</span>' +
         (ev.sel.length ? '<a class="li go" href="' + esc(skyLink()) + '">Open ' + U.fint(ev.sel.length) + ' in Explore' + U.icon('arrow', 2) + '</a>' : '') +
-        '<button type="button" class="linkbtn" data-sky-clear>Clear</button>';
+        '<button type="button" class="linkbtn" data-sky-clear>Clear</button>' +
+        (H.sky.on.coadd ? '<span class="muted" style="font-size:12px">Coadd: transients inside DP2 deep-coadd patches, not the patch outlines</span>' : '');
       layers = [{ idx: ev.other, dot: '--dot-none', size: 3.2, opacity: 0.9 }, { idx: ev.sel, dot: '--dot-data', size: X.skySize(ev.sel.length), opacity: 0.92 }];
     } else {
       var yes = [], no = [];

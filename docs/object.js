@@ -162,7 +162,7 @@
       h += fact('Time-consistent', tc === true || tc === 1 ? 'Yes' : tc === false || tc === 0 ? 'No' : '—');
       if (U.has('edp2_coadd')) {
         var co = V(i, 'edp2_coadd'), cb = String(V(i, 'edp2_coadd_bands') || '');
-        h += fact('EDP2 deep coadd', co === true ? 'Inside' + (cb ? ' <span class="mono">' + esc(cb.split('').join(' ')) + '</span>' : '') : co === false ? 'Outside the footprint' : '—',
+        h += fact('EDP2 deep coadd', co === true ? 'Inside' + (cb ? ' <span class="mono">' + esc(cb.split('').join(' ')) + '</span>' : '') : co === false ? 'Outside every DP2 deep-coadd patch' : '—',
           co === true ? 'bands with a DP2 deep coadd here' : '');
       }
       h += '</dl>';

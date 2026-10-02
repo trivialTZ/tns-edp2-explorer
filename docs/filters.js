@@ -150,9 +150,9 @@
       if (C.edp2_coadd !== undefined) {
         var jco = C.edp2_coadd;
         addCat({ id: 'ecov', label: 'EDP2 deep coadd', private: true, open: true,
-          values: [{ v: '1', label: 'Inside the coadd footprint' }, { v: '0', label: 'Outside' }],
+          values: [{ v: '1', label: 'Inside a DP2 deep-coadd patch' }, { v: '0', label: 'Outside every patch' }],
           get: function (i) { return rows[i][jco] === true ? '1' : '0'; },
-          note: 'The position falls inside a DP2 deep-coadd patch (dp2.CoaddPatches).' });
+          note: 'Whether the TNS position falls inside a DP2 deep-coadd patch (dp2.CoaddPatches). DP2-only candidates carry no coadd flag and count as outside.' });
       }
       // DP2 SALT-pass candidates (team only; build/dp2_salt.py): the tightest tier each row reaches
       if (C.edp2_salt !== undefined) {
