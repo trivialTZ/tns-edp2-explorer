@@ -1,8 +1,8 @@
 {
  "title": "TNS x EDP2 Explorer: bulk download",
  "site": "https://trivialtz.github.io/tns-edp2-explorer/",
- "version": "2026-09-29",
- "built": "2026-09-29T05:41:14+00:00",
+ "version": "2026-10-05",
+ "built": "2026-10-05T18:22:45+00:00",
  "mode": "public",
  "sources": {
   "lsst_alert": "LSST alerts (Fink)",
@@ -62,15 +62,15 @@
   },
   "classifiers.csv.gz": {
    "rows": 108060,
-   "bytes": 721644,
-   "sha256": "1b5bd78a43e71e7553677e05937b85abe4ba8ae83abf865efa04f3196bd61aad",
+   "bytes": 731690,
+   "sha256": "38078ba4c105d6c18a798193dbe4b8d8e0d9c67cdf7803e94ccbd64d0c8e069d",
    "columns": {
     "name": "TNS name without prefix",
     "survey": "LSST (Rubin alert stream) or ZTF",
     "object_id": "survey object ID (ZTF oid or Rubin alert diaObjectId; read as string)",
     "n_det": "detection number (positive detections, metaDEBASS count; for Rubin IDs metaDEBASS did not score, the alert number)",
     "mjd": "MJD of that detection",
-    "classifier": "classifier key (mdb = metaDEBASS fusion v13f)",
+    "classifier": "classifier key (mdb = metaDEBASS fusion v13j)",
     "call": "what a broker classifier says at this detection: SN Ia, SN (not Ia), SN (subtype not given), not SN, not Ia; empty for metaDEBASS, a meta-layer that makes no call",
     "score": "the classifier's own score for its call; for metaDEBASS its calibrated P(supernova)",
     "p_ia": "metaDEBASS calibrated P(SN Ia), ZTF only (its Rubin P(SN Ia) does not yet beat chance on the Rubin benchmark)",
