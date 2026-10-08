@@ -6,7 +6,7 @@ data/tnsx_eval_*, tools/run_fetch.py + tools/run_score.sh): per survey,
 
   gold/snapshots_<sv>.parquet            one row per object id and detection number (<= 20)
   silver_<sv>/broker_events.parquet      native broker outputs (class names, probabilities)
-  scores/predictions_tnsx_<sv>_v13j.parquet     metaDEBASS fusion_v13j probabilities and trust per row
+  scores/predictions_tnsx_<sv>_v13j_on_v13k.parquet  metaDEBASS fusion_v13j probabilities and trust per row
 
 Every input is public: Rubin alert-stream and ZTF alert data, broker outputs, TNS types.
 
@@ -49,10 +49,13 @@ OUT = C.NORM / "classifiers.parquet"
 OBJ = C.NORM / "classifier_objects.parquet"
 CARD = C.NORM / "classifier_scorecard.json"
 # metaDEBASS fusion v13j (SCC-trained on the v13g gold, which adds broker-called hard negatives; rubin_hackathon
-# models/*_fusion_v13j, docs/fusion_v13g_plan.md), scored on SCC with the local experts run for every object (cohort
-# golds rebuilt by jobs/run_fusion_v13g_gold.sh, scores from jobs/run_fusion_v13.sh step 5). Objects in its train/cal
-# split are in-sample.
-MDB_TAG = "v13j"
+# models/*_fusion_v13j, docs/fusion_v13g_plan.md), scored on SCC with the local experts run for every object. Since
+# 2026-10-08 the scored rows are the v13k cohort golds (jobs/run_fusion_v13k_gold.sh, docs/fusion_v13k_plan.md): the
+# gold as-of join no longer hands an early detection a local-expert output computed after it, and lc_features_bv comes
+# from a head trained on the fusion train split only (the earlier head saw every labelled object). Same v13j model,
+# which holds its benchmark on these golds; the v13k split is identical to v13g. Objects in its train/cal split are
+# in-sample.
+MDB_TAG = "v13j_on_v13k"
 MDB_SPLITS = [C.HACK / "data/gold/split_fusion_v13g_scc.json"]
 CHECKPOINTS = [3, 5, 10]
 # metaDEBASS trust columns -> the broker they rate. Each is P(the object is a supernova) (trust target is_sn),

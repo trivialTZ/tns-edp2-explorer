@@ -1,8 +1,8 @@
 {
  "title": "TNS x EDP2 Explorer: bulk download",
  "site": "https://trivialtz.github.io/tns-edp2-explorer/",
- "version": "2026-10-05",
- "built": "2026-10-05T18:22:45+00:00",
+ "version": "2026-10-08",
+ "built": "2026-10-08T20:51:30+00:00",
  "mode": "public",
  "sources": {
   "lsst_alert": "LSST alerts (Fink)",
@@ -62,8 +62,8 @@
   },
   "classifiers.csv.gz": {
    "rows": 108060,
-   "bytes": 731690,
-   "sha256": "38078ba4c105d6c18a798193dbe4b8d8e0d9c67cdf7803e94ccbd64d0c8e069d",
+   "bytes": 739383,
+   "sha256": "9ff68d35f6b54be4ff203304aa8d083a57cd46ae94b42f2b7213dd8a4c0237b9",
    "columns": {
     "name": "TNS name without prefix",
     "survey": "LSST (Rubin alert stream) or ZTF",
