@@ -33,6 +33,7 @@ import common as C
 import dp2_salt as D
 import hosts as H
 import stamps as ST
+import host_photoz as HP
 
 PUBLIC_NORM_FILES = ["ztf.parquet", "tns.parquet", "lsst_alert.parquet"]
 SPEC_NORM = C.NORM / "tns_spec.parquet"                    # build/fetch_tns_spectra.py (public TNS spectra)
@@ -341,6 +342,7 @@ def edp2_layer(cat: pd.DataFrame, host_split=None) -> tuple[dict, dict[int, dict
               + (f", plus the withheld fits of {len(pub)} public rows" if withheld else ""))
     have = set(host_split[0]["name"]) | set(host_split[1]["name"]) if host_split is not None else set()
     xshards = salt_layer(salt, cat, payload, shards, have) if salt is not None else {}
+    HP.attach_to_payload(payload)
     return payload, shards, ids, xshards
 
 

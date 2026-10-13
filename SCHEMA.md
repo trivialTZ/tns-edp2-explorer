@@ -237,6 +237,33 @@ pending (leading or second host), public rows show `host_fit`/`host_2_fit = "pen
 real values are in the encrypted `hosts` table). `data/hosts/` holds only
 `<name>.webp` files for public rows with `host_img == "file"`.
 
+### Candidate-galaxy redshift audit
+
+`data/host_photoz.js` calls `TNSX.onHostPhotoz` with a strict aggregate-only
+schema: version, release label, completion status, final manifest SHA-256,
+whitelisted counts, validation metrics and limited training-lineage declarations.
+It contains no object rows, IDs, fluxes, PDFs, local paths or credentials.
+`build/host_photoz_schema.py` is authoritative; `check_public.py` rejects any
+additional public field or unsupported independence declaration.
+
+The encrypted catalogue may contain `host_photoz: {cols, rows}`. Its exact
+columns are defined by `TEAM_COLS` in that module. It stores selected candidate
+identity, spectroscopy and catalog photo-z status, plus source-separated SED
+diagnostics. `sed_adopted_as_hostz` and `science_usable` must remain false.
+The v9 diagnostics include source-separated 68%/95% profile intervals,
+likelihood temperature, calibration availability, fresh source-validation
+status and review flags. Expanded Legacy intervals have separate fields and
+a development-support flag; they never replace the original catalog point z.
+Three optional JSON-text fields retain whitelisted supplemental survey fits,
+photometry-query outcomes and published catalog references inside the encrypted
+table only. Raw photometry, local paths and extra source IDs are excluded;
+their compact disclosures remain diagnostic and unadopted.
+The new page shows SED values only in a diagnostic disclosure, preserving old
+catalog photo-z measurements and separating galaxy redshift from host identity.
+Nothing is added to the old `hosts` table or the bulk public downloads.
+Public count aliases are explicit. An unknown `n_*` count key fails the export
+instead of silently disappearing; other private metadata is excluded.
+
 ## 3. Encrypted EDP2 layer (team access)
 
 Written by `build/assemble.py --mode public --encrypt-edp2` through

@@ -77,6 +77,7 @@
     clfRaw: {}, clfPromises: {},            // broker classifications + metaDEBASS, data/clf/NNN.js
     dp2Stamp: {},                           // DP2 deep-coadd stamps (data URIs) from encrypted shards
     hostImg: {}, hostTeam: new Set(),       // host figures from encrypted shards; host rows only team access shows
+    hostPhotozPublic: null, hostPhotozTeam: null,
     theme: 'auto'
   };
   X.views = {};
@@ -624,10 +625,11 @@
     } else if (h.indexOf('#/about') === 0) name = 'about';
     else if (h.indexOf('#/data') === 0) name = 'data';
     else if (h.indexOf('#/classifiers') === 0) { name = 'classifiers'; arg = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : ''; }
+    else if (h.indexOf('#/host-photoz') === 0) name = 'host-photoz';
     var prev = S.view;
     S.view = name;
     document.documentElement.setAttribute('data-route', name);
-    ['home', 'explore', 'object', 'about', 'data', 'classifiers'].forEach(function (k) { var v = document.getElementById('view-' + k); if (v) v.hidden = k !== name; });
+    ['home', 'explore', 'object', 'about', 'data', 'classifiers', 'host-photoz'].forEach(function (k) { var v = document.getElementById('view-' + k); if (v) v.hidden = k !== name; });
     U.$all('.nav a').forEach(function (a) {
       if (a.getAttribute('data-nav') === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });

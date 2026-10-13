@@ -79,6 +79,17 @@ class CheckPublic(unittest.TestCase):
     def test_valid_encrypted_layer_passes(self):
         self.assertEqual(self.run_check(), 0)
 
+    def test_aggregate_host_photoz_summary_passes(self):
+        summary = {"schema_version": 1, "release": "pending", "status": "pending", "manifest_sha256": None,
+                   "summary": {}, "validation": [], "lineage": {"local_fixed_run_blinded": None,
+                   "entire_ancestry_confirmed": False, "legacy_false_is_formal_independence": False}}
+        path = self.root / "data/host_photoz.js"
+        path.write_text("TNSX.onHostPhotoz("+json.dumps(summary)+");\n")
+        self.assertEqual(self.run_check(), 0)
+        summary["rows"] = [["2025abc", .2]]
+        path.write_text("TNSX.onHostPhotoz("+json.dumps(summary)+");\n")
+        self.assertFails()
+
     def test_no_layer_passes(self):
         for f in self.enc.iterdir():
             f.unlink()

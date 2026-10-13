@@ -821,3 +821,17 @@ details.colref td.mono { white-space: nowrap; font-size: 12.5px; }
   background: var(--card); font-size: var(--t-sm); line-height: 1.5; }
 .team-need .ico { color: var(--private); flex: none; margin-top: 2px; }
 .team-need .btn { margin-left: 6px; }
+
+/* Candidate-galaxy redshift audit */
+.hp-page { padding-bottom: 32px; }
+.hp-counts { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin:20px 0 32px; }
+.hp-counts .stat { display:flex; flex-direction:column; gap:8px; padding:18px; }
+.hp-counts strong { font-size:28px; font-variant-numeric:tabular-nums; color:var(--accent); }
+.hp-counts span { color:var(--muted); font-size:13px; }
+.hp-notice,.hp-access { padding:20px 24px; margin:24px 0; border-left:3px solid var(--brand); }
+.hp-notice p,.hp-access p { margin-bottom:0; }
+.hp-sub { display:block; font-weight:400; font-size:11.5px; color:var(--muted); margin-top:5px; max-width:280px; }
+.hp-search { display:flex; flex-direction:column; gap:7px; font-size:13px; max-width:520px; }
+.hp-search input { padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--card); color:var(--ink); font:inherit; }
+.hp-object-table { max-height:650px !important; }
+.hp-object-table details p { font-size:12px; margin:10px 0; min-width:270px; }

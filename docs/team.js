@@ -144,8 +144,9 @@
     var st = readStored();
     if (!st) return Promise.resolve(null);
     if (!subtle) { fail('this page cannot decrypt (WebCrypto needs https or localhost)'); return Promise.resolve(null); }
-    var v = '?v=' + encodeURIComponent(st.salt.slice(0, 16));        // cache key per build
-    var pCat = loadBlob('catalog', 'catalog.js' + v);
+    var v = '?v=' + encodeURIComponent(st.salt.slice(0, 16));        // stable shard key
+    // An incremental publication keeps the salt but changes the catalogue.
+    var pCat = loadBlob('catalog', 'catalog.js' + v + '&t=' + Date.now());
     pCat.catch(function () { /* reported through the chain below */ });
     return loadKeyInfo().then(function (ki) {
       if (ki.salt !== st.salt) throw new Error('stale');
@@ -176,6 +177,7 @@
       });
       Object.keys(srcs).forEach(function (k) { if (!/^edp2_[a-z0-9_]+$/.test(k)) throw new Error('unexpected source ' + k); });
       if (p.hosts) X.checkHostTable(p.hosts);
+      if (p.host_photoz) X.checkHostPhotozTable(p.host_photoz);
       var ex = p.extra;
       if (ex && (!Array.isArray(ex.cols) || !Array.isArray(ex.rows) || ex.cols[0] !== 'name' ||
           !ex.rows.every(function (r) { return Array.isArray(r) && r.length === ex.cols.length; }))) throw new Error('unexpected extra rows');
@@ -218,6 +220,7 @@
       d.meta.team = true;
       if (Array.isArray(p.notes)) d.meta.notes = p.notes;
       if (p.salt && typeof p.salt === 'object') d.meta.salt = p.salt;
+      if (p.host_photoz) S.hostPhotozTeam = p.host_photoz;
       if (U.isNum(p.match_radius_arcsec)) d.meta.match_radius_arcsec = p.match_radius_arcsec;
       T.unlocked = true;
       return true;

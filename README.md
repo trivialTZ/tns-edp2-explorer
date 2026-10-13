@@ -177,6 +177,34 @@ good-EDP2 list, is selected with proprietary DP2 detections. So
 
 ## Using the site
 
+The **Host redshifts** page (`#/host-photoz`) keeps candidate-galaxy spectra,
+catalog photo-z and separate SED diagnostics apart from confirmed host identity.
+Unresolved evidence is never described as proof that a galaxy was not observed.
+Its public data file contains only whitelisted aggregate counts and validation
+metrics. Every new per-object row lives inside the existing encrypted catalogue;
+failed SED values can be inspected in a diagnostic disclosure but are never
+adopted as host redshifts or promoted to science use.
+Development-expanded catalog intervals and their support flags are separate
+diagnostics; existing catalog point estimates stay unchanged.
+
+To update this page after a final host-context release is sealed:
+
+```bash
+PY=~/.venvs/debass_py313/bin/python
+$PY build/host_photoz.py --release-dir /path/to/sealed/release       # audit, no writes
+$PY build/host_photoz.py --release-dir /path/to/sealed/release --publish
+$PY build/test_host_photoz.py -q
+node build/test_host_photoz_ui.js
+python3 build/test_check_public.py -q
+python3 build/check_public.py docs
+```
+
+The exporter verifies each consumed input against `final_delivery_manifest.json`,
+reads `host_context.parquet` and an optional approved `website_summary.json`, and
+updates the existing AES-GCM layer without changing its lightcurve shards or
+old public catalogue. The private publication receipt records the selected
+release for future full rebuilds. It contains local paths and is never committed.
+
 Search (top bar, home page, Explore name box) takes TNS names, internal names,
 "RA Dec", and Rubin diaObjectIds, either whole or as a prefix of at least 6
 digits; `#/object/<diaObjectId>` opens the matching transient. Alert-stream IDs

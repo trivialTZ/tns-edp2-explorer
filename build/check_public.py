@@ -34,6 +34,7 @@ import json
 import re
 import sys
 from pathlib import Path
+import host_photoz_schema as HP
 
 MAX_BYTES = 50_000_000
 DP2_ID = re.compile(r"(?<!\d)7\d{17}(?!\d)")          # DP2 catalog diaObjectIds are ~7.6e17
@@ -283,6 +284,13 @@ def main(root: Path) -> int:
             bad = [s for s in j["meta"].get("sources", {}) if s.startswith("edp2")]
             if bad:
                 errs.append(f"{rel}: private sources {bad}")
+        if rel.as_posix() == "data/host_photoz.js":
+            try:
+                if not txt.startswith("TNSX.onHostPhotoz(") or not txt.rstrip().endswith(");"):
+                    raise ValueError("Unexpected callback")
+                HP.validate_public(json.loads(txt[txt.index("(")+1:txt.rindex(")")]))
+            except (ValueError, TypeError, KeyError) as error:
+                errs.append(f"{rel}: invalid aggregate-only host photo-z summary ({error})")
     errs += check_enc_dir(root)
     errs += check_hosts(root, cat)
     errs += check_stamps(root, cat)

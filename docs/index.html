@@ -14,7 +14,7 @@
   (function () {
     try { var t = localStorage.getItem('tnsx-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
     var h = location.hash || '';
-    var r = /^#\/(explore|object|about|data|classifiers)/.exec(h);
+    var r = /^#\/(explore|object|about|data|classifiers|host-photoz)/.exec(h);
     document.documentElement.setAttribute('data-route', r ? r[1] : (/^#\/\?/.test(h) ? 'explore' : 'home'));
   })();
 </script>
@@ -34,6 +34,7 @@
 <script src="about.js" defer></script>
 <script src="data.js" defer></script>
 <script src="classifiers.js" defer></script>
+<script src="host-photoz.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -45,6 +46,7 @@
       <a href="#/" data-nav="home">Home</a>
       <a href="#/explore" data-nav="explore">Explore</a>
       <a href="#/classifiers" data-nav="classifiers">Classifiers</a>
+      <a href="#/host-photoz" data-nav="host-photoz">Host redshifts</a>
       <a href="#/data" data-nav="data">Data</a>
       <a href="#/about" data-nav="about">About</a>
     </nav>
@@ -84,6 +86,7 @@
   <section id="view-about" class="view" aria-label="About" hidden></section>
   <section id="view-data" class="view" aria-label="Data and citation" hidden></section>
   <section id="view-classifiers" class="view" aria-label="Classifiers" hidden></section>
+  <section id="view-host-photoz" class="view" aria-label="Candidate galaxy redshifts" hidden></section>
   <div id="boot-generic" class="wrap boot-generic" aria-hidden="true">
     <div class="sk" style="height:44px;width:40%"></div>
     <div class="sk" style="height:16px;width:60%"></div>
